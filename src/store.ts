@@ -46,3 +46,9 @@ export function setError(id: string, error: string): void {
   if (!job) return;
   job.error = error;
 }
+
+export function listJobs(): Job[] {
+  return Array.from(jobs.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
