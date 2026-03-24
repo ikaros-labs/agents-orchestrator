@@ -1,5 +1,5 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import type { InputImage, Job, JobStatus, LogEntry } from "./types.ts";
+import type { InputFile, Job, JobStatus, LogEntry } from "./types.ts";
 
 const DATA_DIR = "./data/jobs";
 mkdirSync(DATA_DIR, { recursive: true });
@@ -22,7 +22,7 @@ export function loadStore(): void {
   }
 }
 
-export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputImage[] = []): Job {
+export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = []): Job {
   const job: Job = {
     id,
     status: "pending",

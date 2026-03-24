@@ -6,7 +6,7 @@ export type LogEntry =
   | { type: "tool_call"; name: string; input?: Record<string, unknown>; ts: string }
   | { type: "image"; mediaType: string; url: string; ts: string };
 
-export interface InputImage {
+export interface InputFile {
   mediaType: string;
   filename: string;
 }
@@ -25,5 +25,5 @@ export interface Job {
   sessionId: string | null;
   result: string | null;
   error: string | null;
-  images: InputImage[];
+  images: InputFile[];
 }

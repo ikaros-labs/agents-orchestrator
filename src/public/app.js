@@ -2,8 +2,8 @@ let selectedId = null;
 let jobs = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
 
-// ── Image attachment state ──────────────────────────────────────────────────
-let pendingImages = []; // { mediaType, data, objectUrl }
+// ── File attachment state ───────────────────────────────────────────────────
+let pendingFiles = []; // { mediaType, data, objectUrl, name }
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -14,7 +14,8 @@ function fileToBase64(file) {
   });
 }
 
-async function handlePastedImages(e, imageArray, renderFn) {
+// Clipboard paste only handles images — browsers don't support pasting arbitrary files
+async function handlePastedFiles(e, fileArray, renderFn) {
   const items = Array.from(e.clipboardData?.items || []);
   const imageItems = items.filter(item => item.kind === 'file' && item.type.startsWith('image/'));
   if (imageItems.length === 0) return; // nothing to do — let default paste proceed
@@ -24,7 +25,7 @@ async function handlePastedImages(e, imageArray, renderFn) {
     if (!file) continue;
     try {
       const data = await fileToBase64(file);
-      imageArray.push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file) });
+      fileArray.push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file), name: file.name });
     } catch { /* skip unreadable items */ }
   }
   renderFn();
@@ -34,28 +35,30 @@ document.getElementById('image-input').addEventListener('change', async (e) => {
   for (const file of Array.from(e.target.files)) {
     try {
       const data = await fileToBase64(file);
-      pendingImages.push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file) });
+      pendingFiles.push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file), name: file.name });
     } catch { /* skip unreadable files */ }
   }
   e.target.value = ''; // reset so same file can be re-added after removal
-  renderImagePreviews();
+  renderFilePreviews();
 });
 
-function renderImagePreviews() {
-  const el = document.getElementById('image-previews');
-  if (!el) return;
-  el.innerHTML = pendingImages.map((img, i) => `
-    <div class="img-preview-item">
-      <img src="${escHtml(img.objectUrl)}" alt="Attached image ${i+1}">
-      <button class="img-remove-btn" onclick="removePendingImage(${i})" title="Remove">×</button>
-    </div>
-  `).join('');
+function filePreviewHtml(f, onclickExpr) {
+  const preview = f.mediaType.startsWith('image/')
+    ? `<img src="${escHtml(f.objectUrl)}" alt="Attached file">`
+    : `<div class="file-chip">${escHtml(f.name)}</div>`;
+  return `<div class="img-preview-item">${preview}<button class="img-remove-btn" onclick="${onclickExpr}" title="Remove">×</button></div>`;
 }
 
-function removePendingImage(index) {
-  URL.revokeObjectURL(pendingImages[index].objectUrl);
-  pendingImages.splice(index, 1);
-  renderImagePreviews();
+function renderFilePreviews() {
+  const el = document.getElementById('image-previews');
+  if (!el) return;
+  el.innerHTML = pendingFiles.map((f, i) => filePreviewHtml(f, `removePendingFile(${i})`)).join('');
+}
+
+function removePendingFile(index) {
+  URL.revokeObjectURL(pendingFiles[index].objectUrl);
+  pendingFiles.splice(index, 1);
+  renderFilePreviews();
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -87,7 +90,7 @@ function renderList(list) {
         <span class="job-time">${relTime(j.createdAt)}</span>
       </div>
       <div class="job-prompt">${escHtml(j.prompt)}</div>
-      ${j.images && j.images.length ? `<div class="job-image-badge">📎 ${j.images.length} image${j.images.length > 1 ? 's' : ''}</div>` : ''}
+      ${j.images && j.images.length ? `<div class="job-image-badge">📎 ${j.images.length} file${j.images.length > 1 ? 's' : ''}</div>` : ''}
       ${j.cwd ? `<div style="font-size:10px;color:#555;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.cwd)}</div>` : ''}
     </div>
   `).join('');
@@ -121,12 +124,17 @@ function renderLogEntry(e) {
 
 function renderInputImages(job) {
   if (!job.images || !job.images.length) return '';
-  const thumbs = job.images.map((img, i) =>
-    `<a href="/images/${escHtml(job.id)}/${escHtml(img.filename)}" target="_blank" rel="noopener">
-      <img src="/images/${escHtml(job.id)}/${escHtml(img.filename)}" alt="Attached image ${i+1}" class="input-img-thumb" loading="lazy">
-    </a>`
-  ).join('');
-  return `<div class="input-images-row">${thumbs}</div>`;
+  const items = job.images.map((img, i) => {
+    const url = `/images/${escHtml(job.id)}/${escHtml(img.filename)}`;
+    if (img.mediaType.startsWith('image/')) {
+      return `<a href="${url}" target="_blank" rel="noopener">
+        <img src="${url}" alt="Attached image ${i+1}" class="input-img-thumb" loading="lazy">
+      </a>`;
+    } else {
+      return `<a href="${url}" target="_blank" rel="noopener" class="input-file-chip">${escHtml(img.filename)}</a>`;
+    }
+  }).join('');
+  return `<div class="input-images-row">${items}</div>`;
 }
 
 function renderDetail(job) {
@@ -151,10 +159,10 @@ function renderDetail(job) {
           <textarea id="followup-prompt-${job.id}" placeholder="Ask a follow-up question..." rows="2"></textarea>
         </div>
         <div class="followup-actions">
-          <label class="attach-btn attach-btn-sm" for="followup-image-input-${job.id}" title="Attach images">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <label class="attach-btn attach-btn-sm" for="followup-image-input-${job.id}" title="Attach files">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           </label>
-          <input type="file" id="followup-image-input-${job.id}" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none" onchange="handleFollowupImages('${job.id}', this)">
+          <input type="file" id="followup-image-input-${job.id}" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/html,text/csv,text/xml" multiple style="display:none" onchange="handleFollowupImages('${job.id}', this)">
           <button class="btn-followup" id="followup-btn-${job.id}" onclick="sendFollowUp('${job.id}')">Send Follow-up</button>
         </div>
         <div id="followup-previews-${job.id}" class="image-previews"></div>
@@ -204,20 +212,20 @@ function renderDetail(job) {
     });
     followupTa.addEventListener('paste', async (e) => {
       if (!followupImages[job.id]) followupImages[job.id] = [];
-      await handlePastedImages(e, followupImages[job.id], () => renderFollowupPreviews(job.id));
+      await handlePastedFiles(e, followupImages[job.id], () => renderFollowupPreviews(job.id));
     });
   }
 }
 
-// ── Follow-up image handling ───────────────────────────────────────────────
-const followupImages = {}; // jobId → [{ mediaType, data, objectUrl }]
+// ── Follow-up file handling ────────────────────────────────────────────────
+const followupImages = {}; // jobId → [{ mediaType, data, objectUrl, name }]
 
 async function handleFollowupImages(jobId, input) {
   if (!followupImages[jobId]) followupImages[jobId] = [];
   for (const file of Array.from(input.files)) {
     try {
       const data = await fileToBase64(file);
-      followupImages[jobId].push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file) });
+      followupImages[jobId].push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file), name: file.name });
     } catch { /* skip */ }
   }
   input.value = '';
@@ -227,13 +235,8 @@ async function handleFollowupImages(jobId, input) {
 function renderFollowupPreviews(jobId) {
   const el = document.getElementById('followup-previews-' + jobId);
   if (!el) return;
-  const imgs = followupImages[jobId] || [];
-  el.innerHTML = imgs.map((img, i) => `
-    <div class="img-preview-item">
-      <img src="${escHtml(img.objectUrl)}" alt="Follow-up image ${i+1}">
-      <button class="img-remove-btn" onclick="removeFollowupImage('${jobId}',${i})" title="Remove">×</button>
-    </div>
-  `).join('');
+  const files = followupImages[jobId] || [];
+  el.innerHTML = files.map((f, i) => filePreviewHtml(f, `removeFollowupImage('${jobId}',${i})`)).join('');
 }
 
 function removeFollowupImage(jobId, index) {
@@ -330,8 +333,8 @@ async function submitJob() {
   const tools = toolsRaw ? toolsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['Read','Edit','Glob'];
   const cwdVal = document.getElementById('cwd').value.trim();
   const body = cwdVal ? {prompt, tools, cwd: cwdVal} : {prompt, tools};
-  if (pendingImages.length) {
-    body.images = pendingImages.map(({ mediaType, data }) => ({ mediaType, data }));
+  if (pendingFiles.length) {
+    body.images = pendingFiles.map(({ mediaType, data }) => ({ mediaType, data }));
   }
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting...';
@@ -339,10 +342,10 @@ async function submitJob() {
     const res = await fetch('/jobs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const job = await res.json();
     document.getElementById('prompt').value = '';
-    // clear image attachments
-    pendingImages.forEach(img => URL.revokeObjectURL(img.objectUrl));
-    pendingImages = [];
-    renderImagePreviews();
+    // clear file attachments
+    pendingFiles.forEach(f => URL.revokeObjectURL(f.objectUrl));
+    pendingFiles = [];
+    renderFilePreviews();
     selectedId = job.id;
     await poll();
   } finally {
@@ -354,7 +357,7 @@ document.getElementById('prompt').addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitJob();
 });
 document.getElementById('prompt').addEventListener('paste', async (e) => {
-  await handlePastedImages(e, pendingImages, renderImagePreviews);
+  await handlePastedFiles(e, pendingFiles, renderFilePreviews);
 });
 
 poll();

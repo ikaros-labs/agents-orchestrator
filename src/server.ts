@@ -2,7 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import * as store from "./store.ts";
-import type { InputImage } from "./types.ts";
+import type { InputFile } from "./types.ts";
 
 const LOGS_DIR = "./logs";
 const IMAGES_DIR = "./data/images";
@@ -16,13 +16,28 @@ const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "We
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "localhost";
 
-const ALLOWED_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const DOCUMENT_MEDIA_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "text/html",
+  "text/csv",
+  "text/xml",
+  "application/xml",
+]);
+const ALLOWED_MEDIA_TYPES = new Set([...IMAGE_MEDIA_TYPES, ...DOCUMENT_MEDIA_TYPES]);
 
 const MEDIA_TYPE_EXT: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/gif": "gif",
   "image/webp": "webp",
+  "application/pdf": "pdf",
+  "text/plain": "txt",
+  "text/html": "html",
+  "text/csv": "csv",
+  "text/xml": "xml",
+  "application/xml": "xml",
 };
 
 /** Save base64 image data to disk and return the server-relative URL. */
@@ -37,20 +52,31 @@ async function saveImage(jobId: string, index: number, mediaType: string, base64
 
 interface RawImage { mediaType: string; data: string }
 
-/** Build a multimodal prompt iterable when images are provided; otherwise fall back to a plain string. */
+/** Build a multimodal prompt iterable when files are provided; otherwise fall back to a plain string. */
 async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string): AsyncIterable<any> {
-  // Save images to disk and build content blocks
-  const imageBlocks = await Promise.all(
+  // Save files to disk and build content blocks (image or document depending on type)
+  const contentBlocks = await Promise.all(
     rawImages.map(async (img, i) => {
       await saveImage(jobId, i, img.mediaType, img.data);
-      return {
-        type: "image" as const,
-        source: {
-          type: "base64" as const,
-          media_type: img.mediaType as any,
-          data: img.data,
-        },
-      };
+      if (IMAGE_MEDIA_TYPES.has(img.mediaType)) {
+        return {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: img.mediaType as any,
+            data: img.data,
+          },
+        };
+      } else {
+        return {
+          type: "document" as const,
+          source: {
+            type: "base64" as const,
+            media_type: img.mediaType as any,
+            data: img.data,
+          },
+        };
+      }
     })
   );
   yield {
@@ -58,7 +84,7 @@ async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string)
     message: {
       role: "user" as const,
       content: [
-        ...imageBlocks,
+        ...contentBlocks,
         { type: "text" as const, text: prompt },
       ],
     },
@@ -264,11 +290,13 @@ Bun.serve({
       const file = Bun.file(filePath);
       if (!(await file.exists())) return jsonError(404, "Image not found");
       const ext = filename!.split(".").pop()?.toLowerCase();
-      const contentType = ext === "jpg" || ext === "jpeg" ? "image/jpeg"
-        : ext === "png" ? "image/png"
-        : ext === "gif" ? "image/gif"
-        : ext === "webp" ? "image/webp"
-        : "application/octet-stream";
+      const EXT_CONTENT_TYPE: Record<string, string> = {
+        jpg: "image/jpeg", jpeg: "image/jpeg",
+        png: "image/png", gif: "image/gif", webp: "image/webp",
+        pdf: "application/pdf",
+        txt: "text/plain", html: "text/html", csv: "text/csv", xml: "text/xml",
+      };
+      const contentType = EXT_CONTENT_TYPE[ext ?? ""] ?? "application/octet-stream";
       return new Response(file, { headers: { "Content-Type": contentType } });
     }
 
@@ -317,8 +345,8 @@ Bun.serve({
 
       const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
 
-      // Build InputImage refs (filenames will be <index>.<ext>)
-      const inputImageRefs: InputImage[] = rawImages.map((img, i) => ({
+      // Build InputFile refs (filenames will be <index>.<ext>)
+      const inputImageRefs: InputFile[] = rawImages.map((img, i) => ({
         mediaType: img.mediaType,
         filename: `${i}.${MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
       }));

@@ -68,10 +68,16 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .img-remove-btn { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; border-radius: 50%; background: #333; color: #ccc; border: 1px solid #555; font-size: 10px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
 .img-remove-btn:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
 
-/* Input images shown on job detail */
-.input-images-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
+/* Non-image file chip in the attachment preview area */
+.file-chip { display: inline-flex; align-items: center; justify-content: center; background: #1a1a1a; border: 1px solid #333; border-radius: 5px; padding: 4px 8px; font-size: 11px; color: #aaa; width: 52px; height: 52px; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; word-break: break-all; }
+
+/* Input files shown on job detail */
+.input-images-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; align-items: center; }
 .input-img-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 5px; border: 1px solid #333; display: block; transition: opacity 0.15s; }
 .input-img-thumb:hover { opacity: 0.85; }
+/* Clickable file chip in the job detail header */
+.input-file-chip { display: inline-flex; align-items: center; background: #1a1a1a; border: 1px solid #333; border-radius: 5px; padding: 4px 10px; font-size: 11px; color: #93c5fd; text-decoration: none; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 28px; }
+.input-file-chip:hover { border-color: #555; color: #60a5fa; }
 
 /* Image badge on job list items */
 .job-image-badge { font-size: 10px; color: #555; margin-top: 3px; }
