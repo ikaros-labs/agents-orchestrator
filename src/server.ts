@@ -1,10 +1,13 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import * as store from "./store.ts";
+import type { InputImage } from "./types.ts";
 
 const LOGS_DIR = "./logs";
+const IMAGES_DIR = "./data/images";
 await mkdir(LOGS_DIR, { recursive: true });
+await mkdir(IMAGES_DIR, { recursive: true });
 store.loadStore();
 
 const UI_HTML = await Bun.file(new URL("./public/index.html", import.meta.url)).text();
@@ -13,12 +16,66 @@ const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "We
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "localhost";
 
-async function planJob(id: string, prompt: string, tools: string[], cwd: string | null): Promise<void> {
+const ALLOWED_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+const MEDIA_TYPE_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+/** Save base64 image data to disk and return the server-relative URL. */
+async function saveImage(jobId: string, index: number, mediaType: string, base64Data: string): Promise<string> {
+  const ext = MEDIA_TYPE_EXT[mediaType] ?? "bin";
+  const dir = `${IMAGES_DIR}/${jobId}`;
+  await mkdir(dir, { recursive: true });
+  const filename = `${index}.${ext}`;
+  await writeFile(`${dir}/${filename}`, Buffer.from(base64Data, "base64"));
+  return `/images/${jobId}/${filename}`;
+}
+
+interface RawImage { mediaType: string; data: string }
+
+/** Build a multimodal prompt iterable when images are provided; otherwise fall back to a plain string. */
+async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string): AsyncIterable<any> {
+  // Save images to disk and build content blocks
+  const imageBlocks = await Promise.all(
+    rawImages.map(async (img, i) => {
+      await saveImage(jobId, i, img.mediaType, img.data);
+      return {
+        type: "image" as const,
+        source: {
+          type: "base64" as const,
+          media_type: img.mediaType as any,
+          data: img.data,
+        },
+      };
+    })
+  );
+  yield {
+    type: "user" as const,
+    message: {
+      role: "user" as const,
+      content: [
+        ...imageBlocks,
+        { type: "text" as const, text: prompt },
+      ],
+    },
+    parent_tool_use_id: null,
+  };
+}
+
+async function planJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
   store.setStatus(id, "planning");
   const planTexts: string[] = [];
+  let imageCounter = rawImages.length; // output images start after input image indices
   try {
+    const promptArg = rawImages.length > 0
+      ? makePrompt(prompt, rawImages, id)
+      : prompt;
     for await (const message of query({
-      prompt,
+      prompt: promptArg as any,
       options: {
         allowedTools: tools,
         permissionMode: "plan",
@@ -34,6 +91,12 @@ async function planJob(id: string, prompt: string, tools: string[], cwd: string 
             planTexts.push(block.text);
           } else if ("name" in block) {
             store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+          } else if ((block as any).type === "image") {
+            const b = block as any;
+            if (b.source?.type === "base64") {
+              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
+              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+            }
           }
         }
       } else if (message.type === "result") {
@@ -51,6 +114,7 @@ async function planJob(id: string, prompt: string, tools: string[], cwd: string 
 
 async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
   store.setStatus(id, "running");
+  let imageCounter = 0;
   try {
     for await (const message of query({
       prompt: "The plan has been approved. Please proceed with execution.",
@@ -69,6 +133,12 @@ async function executeJob(id: string, sessionId: string, tools: string[], cwd: s
             store.appendLog(id, { type: "text", text: block.text, ts });
           } else if ("name" in block) {
             store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+          } else if ((block as any).type === "image") {
+            const b = block as any;
+            if (b.source?.type === "base64") {
+              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
+              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+            }
           }
         }
       } else if (message.type === "result") {
@@ -84,12 +154,16 @@ async function executeJob(id: string, sessionId: string, tools: string[], cwd: s
   }
 }
 
-async function followUpJob(id: string, prompt: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
+async function followUpJob(id: string, prompt: string, sessionId: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
   store.setStatus(id, "running");
   store.clearResult(id);
+  let imageCounter = 0;
   try {
+    const promptArg = rawImages.length > 0
+      ? makePrompt(prompt, rawImages, `${id}-followup-${Date.now()}`)
+      : prompt;
     for await (const message of query({
-      prompt,
+      prompt: promptArg as any,
       options: {
         allowedTools: tools,
         permissionMode: "acceptEdits",
@@ -105,6 +179,12 @@ async function followUpJob(id: string, prompt: string, sessionId: string, tools:
             store.appendLog(id, { type: "text", text: block.text, ts });
           } else if ("name" in block) {
             store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+          } else if ((block as any).type === "image") {
+            const b = block as any;
+            if (b.source?.type === "base64") {
+              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
+              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+            }
           }
         }
       } else if (message.type === "result") {
@@ -131,6 +211,23 @@ function jsonError(status: number, message: string): Response {
   return json(status, { error: message });
 }
 
+/** Validate a raw images array from a request body. Returns an error string or null. */
+function validateImages(raw: unknown): string | null {
+  if (!Array.isArray(raw)) return "images must be an array";
+  for (let i = 0; i < raw.length; i++) {
+    const img = raw[i];
+    if (typeof img !== "object" || img === null) return `images[${i}] must be an object`;
+    const { mediaType, data } = img as Record<string, unknown>;
+    if (typeof mediaType !== "string" || !ALLOWED_MEDIA_TYPES.has(mediaType)) {
+      return `images[${i}].mediaType must be one of: ${[...ALLOWED_MEDIA_TYPES].join(", ")}`;
+    }
+    if (typeof data !== "string" || data.trim() === "") {
+      return `images[${i}].data must be a non-empty base64 string`;
+    }
+  }
+  return null;
+}
+
 Bun.serve({
   port: PORT,
   hostname: HOST,
@@ -152,6 +249,26 @@ Bun.serve({
       return new Response(Bun.file(new URL("./public/app.js", import.meta.url)), {
         headers: { "Content-Type": "text/javascript" },
       });
+    }
+
+    // Serve saved images
+    const imageMatch = path.match(/^\/images\/([^/]+)\/([^/]+)$/);
+    if (req.method === "GET" && imageMatch) {
+      const [, jobId, filename] = imageMatch;
+      // Sanitize: no path traversal
+      if (!/^[\w.-]+$/.test(jobId!) || !/^[\w.-]+$/.test(filename!)) {
+        return jsonError(400, "Invalid image path");
+      }
+      const filePath = `${IMAGES_DIR}/${jobId}/${filename}`;
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) return jsonError(404, "Image not found");
+      const ext = filename!.split(".").pop()?.toLowerCase();
+      const contentType = ext === "jpg" || ext === "jpeg" ? "image/jpeg"
+        : ext === "png" ? "image/png"
+        : ext === "gif" ? "image/gif"
+        : ext === "webp" ? "image/webp"
+        : "application/octet-stream";
+      return new Response(file, { headers: { "Content-Type": contentType } });
     }
 
     if (req.method === "GET" && path === "/jobs") {
@@ -190,9 +307,23 @@ Bun.serve({
         cwd = b["cwd"];
       }
 
+      let rawImages: RawImage[] = [];
+      if ("images" in b) {
+        const err = validateImages(b["images"]);
+        if (err) return jsonError(400, err);
+        rawImages = b["images"] as RawImage[];
+      }
+
       const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
-      store.createJob(id, prompt, tools, cwd);
-      Promise.resolve().then(() => planJob(id, prompt, tools, cwd));
+
+      // Build InputImage refs (filenames will be <index>.<ext>)
+      const inputImageRefs: InputImage[] = rawImages.map((img, i) => ({
+        mediaType: img.mediaType,
+        filename: `${i}.${MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
+      }));
+
+      store.createJob(id, prompt, tools, cwd, inputImageRefs);
+      Promise.resolve().then(() => planJob(id, prompt, tools, cwd, rawImages));
 
       return json(202, { id, status: "pending" });
     }
@@ -240,7 +371,15 @@ Bun.serve({
       if (typeof b["prompt"] !== "string" || b["prompt"].trim() === "") {
         return jsonError(400, "prompt must be a non-empty string");
       }
-      Promise.resolve().then(() => followUpJob(id, (b["prompt"] as string).trim(), job.sessionId!, job.tools, job.cwd));
+
+      let rawImages: RawImage[] = [];
+      if ("images" in b) {
+        const err = validateImages(b["images"]);
+        if (err) return jsonError(400, err);
+        rawImages = b["images"] as RawImage[];
+      }
+
+      Promise.resolve().then(() => followUpJob(id, (b["prompt"] as string).trim(), job.sessionId!, job.tools, job.cwd, rawImages));
       return json(202, { id, status: "running" });
     }
 

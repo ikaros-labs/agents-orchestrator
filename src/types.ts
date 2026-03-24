@@ -2,7 +2,13 @@ export type JobStatus = "pending" | "planning" | "awaiting_approval" | "running"
 
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
-  | { type: "tool_call"; name: string; input?: Record<string, unknown>; ts: string };
+  | { type: "tool_call"; name: string; input?: Record<string, unknown>; ts: string }
+  | { type: "image"; mediaType: string; url: string; ts: string };
+
+export interface InputImage {
+  mediaType: string;
+  filename: string;
+}
 
 export interface Job {
   id: string;
@@ -18,4 +24,5 @@ export interface Job {
   sessionId: string | null;
   result: string | null;
   error: string | null;
+  images: InputImage[];
 }
