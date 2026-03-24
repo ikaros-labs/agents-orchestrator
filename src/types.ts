@@ -1,5 +1,7 @@
 export type JobStatus = "pending" | "planning" | "awaiting_approval" | "running" | "completed" | "failed";
 
+export type JobMode = "auto" | "plan" | "edit";
+
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
   | { type: "user"; text: string; ts: string }
@@ -14,6 +16,7 @@ export interface InputFile {
 export interface Job {
   id: string;
   status: JobStatus;
+  mode: JobMode;
   prompt: string;
   tools: string[];
   createdAt: string;

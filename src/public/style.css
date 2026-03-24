@@ -6,12 +6,13 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .prompt-area { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .create-form textarea { width: 100%; background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 13px; resize: none; font-family: inherit; min-height: 60px; }
 .create-form textarea:focus { outline: none; border-color: #555; }
-.form-right { display: flex; flex-direction: column; gap: 8px; min-width: 160px; }
+.form-right { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
 .create-form input[type=text] { background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 12px; font-family: monospace; }
 .create-form input[type=text]:focus { outline: none; border-color: #555; }
-.create-form button { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer; font-weight: 500; }
-.create-form button:hover { background: #1d4ed8; }
-.create-form button:disabled { background: #333; color: #666; cursor: default; }
+.form-submit-row { display: flex; gap: 8px; align-items: stretch; }
+#submit-btn { flex: 1; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer; font-weight: 500; }
+#submit-btn:hover { background: #1d4ed8; }
+#submit-btn:disabled { background: #333; color: #666; cursor: default; }
 .main { display: flex; flex: 1; overflow: hidden; }
 .job-list { width: 320px; border-right: 1px solid #2a2a2a; overflow-y: auto; flex-shrink: 0; }
 .job-list-empty { padding: 24px 16px; color: #555; font-size: 13px; text-align: center; }
@@ -58,6 +59,18 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .btn-followup { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 9px 16px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .btn-followup:hover { background: #1d4ed8; }
 .btn-followup:disabled { background: #333; color: #666; cursor: default; }
+
+/* ── Mode selector ──────────────────────────────────────────────────────── */
+.mode-selector { display: flex; border: 1px solid #2a2a2a; border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+.mode-btn { flex: 1; background: #0f0f0f; color: #444; border: none; border-right: 1px solid #2a2a2a; padding: 0 12px; font-size: 12px; cursor: pointer; font-family: inherit; font-weight: 500; transition: background 0.12s, color 0.12s; white-space: nowrap; }
+.mode-btn:last-child { border-right: none; }
+.mode-btn:hover:not(.active) { background: #1a1a1a; color: #888; }
+.mode-btn.active { background: #2563eb; color: #fff; }
+
+/* Mode tag shown in job list items */
+.mode-tag { font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.05em; }
+.mode-tag-plan { background: #1a1535; color: #a78bfa; }
+.mode-tag-edit { background: #0d2035; color: #38bdf8; }
 
 /* ── Image attachment ───────────────────────────────────────────────────── */
 .image-attach-area { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 24px; }

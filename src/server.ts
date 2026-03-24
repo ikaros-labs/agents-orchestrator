@@ -2,7 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import * as store from "./store.ts";
-import type { InputFile } from "./types.ts";
+import type { InputFile, JobMode } from "./types.ts";
 
 const LOGS_DIR = "./logs";
 const IMAGES_DIR = "./data/images";
@@ -177,6 +177,50 @@ async function revisePlanJob(id: string, feedback: string, sessionId: string, to
     }
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
+  } catch (err) {
+    store.setError(id, err instanceof Error ? err.message : String(err));
+    store.setStatus(id, "failed");
+  }
+}
+
+async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+  store.setStatus(id, "running");
+  let imageCounter = rawImages.length;
+  try {
+    const promptArg = rawImages.length > 0
+      ? makePrompt(prompt, rawImages, id)
+      : prompt;
+    for await (const message of query({
+      prompt: promptArg as any,
+      options: {
+        allowedTools: tools,
+        permissionMode: "acceptEdits",
+        ...(cwd ? { cwd } : {}),
+      },
+    })) {
+      const ts = new Date().toISOString();
+      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
+      if (message.type === "assistant" && message.message?.content) {
+        for (const block of message.message.content) {
+          if ("text" in block) {
+            store.appendLog(id, { type: "text", text: block.text, ts });
+          } else if ("name" in block) {
+            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+          } else if ((block as any).type === "image") {
+            const b = block as any;
+            if (b.source?.type === "base64") {
+              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
+              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+            }
+          }
+        }
+      } else if (message.type === "result") {
+        const sessionId = (message as any).session_id ?? (message as any).sessionId;
+        if (sessionId) store.setSessionId(id, sessionId);
+        store.setResult(id, message.subtype);
+      }
+    }
+    store.setStatus(id, "completed");
   } catch (err) {
     store.setError(id, err instanceof Error ? err.message : String(err));
     store.setStatus(id, "failed");
@@ -388,6 +432,14 @@ Bun.serve({
         rawImages = b["images"] as RawImage[];
       }
 
+      let mode: JobMode = "auto";
+      if ("mode" in b) {
+        if (b["mode"] !== "auto" && b["mode"] !== "plan" && b["mode"] !== "edit") {
+          return jsonError(400, 'mode must be one of: "auto", "plan", "edit"');
+        }
+        mode = b["mode"] as JobMode;
+      }
+
       const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
 
       // Build InputFile refs (filenames will be <index>.<ext>)
@@ -396,8 +448,13 @@ Bun.serve({
         filename: `${i}.${MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
       }));
 
-      store.createJob(id, prompt, tools, cwd, inputImageRefs);
-      Promise.resolve().then(() => planJob(id, prompt, tools, cwd, rawImages));
+      store.createJob(id, prompt, tools, cwd, inputImageRefs, mode);
+      if (mode === "edit") {
+        Promise.resolve().then(() => directExecuteJob(id, prompt, tools, cwd, rawImages));
+      } else {
+        // "auto" and "plan" both use the planning flow for now
+        Promise.resolve().then(() => planJob(id, prompt, tools, cwd, rawImages));
+      }
 
       return json(202, { id, status: "pending" });
     }

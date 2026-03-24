@@ -1,6 +1,7 @@
 let selectedId = null;
 let jobs = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
+let currentMode = 'auto';
 
 // ── File attachment state ───────────────────────────────────────────────────
 let pendingFiles = []; // { mediaType, data, objectUrl, name }
@@ -75,6 +76,13 @@ function badge(status) {
   return `<span class="badge badge-${status}">${spinner}${label}</span>`;
 }
 
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -87,6 +95,7 @@ function renderList(list) {
     <div class="job-item${selectedId === j.id ? ' selected' : ''}" onclick="selectJob('${j.id}')">
       <div class="job-item-top">
         ${badge(j.status)}
+        ${j.mode && j.mode !== 'auto' ? `<span class="mode-tag mode-tag-${j.mode}">${j.mode}</span>` : ''}
         <span class="job-time">${relTime(j.createdAt)}</span>
       </div>
       <div class="job-prompt">${escHtml(j.prompt)}</div>
@@ -432,7 +441,7 @@ async function submitJob() {
   const toolsRaw = document.getElementById('tools').value.trim();
   const tools = toolsRaw ? toolsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['Read','Edit','Glob'];
   const cwdVal = document.getElementById('cwd').value.trim();
-  const body = cwdVal ? {prompt, tools, cwd: cwdVal} : {prompt, tools};
+  const body = cwdVal ? {prompt, tools, cwd: cwdVal, mode: currentMode} : {prompt, tools, mode: currentMode};
   if (pendingFiles.length) {
     body.images = pendingFiles.map(({ mediaType, data }) => ({ mediaType, data }));
   }
