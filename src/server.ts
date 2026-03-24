@@ -37,6 +37,8 @@ const UI_HTML = `<!DOCTYPE html>
   .job-time { font-size: 11px; color: #555; flex-shrink: 0; }
   .badge { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.05em; }
   .badge-pending { background: #292210; color: #ca8a04; }
+  .badge-planning { background: #1a1535; color: #a78bfa; }
+  .badge-awaiting_approval { background: #2a1f00; color: #fb923c; }
   .badge-running { background: #0d2035; color: #38bdf8; }
   .badge-completed { background: #0d2218; color: #22c55e; }
   .badge-failed { background: #2a0d0d; color: #ef4444; }
@@ -55,6 +57,13 @@ const UI_HTML = `<!DOCTYPE html>
   .result-error { background: #2a0d0d; border: 1px solid #7f1d1d; color: #f87171; }
   .spinner { display: inline-block; width: 8px; height: 8px; border: 2px solid #38bdf8; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .plan-box { margin: 0 20px 0; padding: 14px 16px; background: #161225; border: 1px solid #2e2060; border-radius: 6px; font-size: 13px; color: #c4b5fd; line-height: 1.6; white-space: pre-wrap; word-break: break-word; flex-shrink: 0; max-height: 40%; overflow-y: auto; }
+  .plan-label { font-size: 11px; font-weight: 600; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .approve-bar { display: flex; gap: 10px; padding: 12px 20px; border-top: 1px solid #2a2a2a; flex-shrink: 0; }
+  .btn-approve { background: #166534; color: #4ade80; border: 1px solid #166534; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-approve:hover { background: #15803d; }
+  .btn-reject { background: transparent; color: #ef4444; border: 1px solid #7f1d1d; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-reject:hover { background: #2a0d0d; }
   ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 </style>
 </head>
@@ -63,7 +72,7 @@ const UI_HTML = `<!DOCTYPE html>
 <div class="create-form">
   <textarea id="prompt" placeholder="Enter a prompt for the agent..." rows="3"></textarea>
   <div class="form-right">
-    <input type="text" id="tools" value="Read, Edit, Glob" placeholder="Tools (comma-separated)">
+    <input type="text" id="tools" value="Read, Edit, Glob, Write, Grep, WebSearch, WebFetch, AskUserQuestion" placeholder="Tools (comma-separated)">
     <input type="text" id="cwd" placeholder="Working directory (optional)">
     <button id="submit-btn" onclick="submitJob()">Run Agent</button>
   </div>
@@ -84,7 +93,9 @@ function relTime(iso) {
 }
 
 function badge(status) {
-  return \`<span class="badge badge-\${status}">\${status === 'running' ? '<span class="spinner"></span>' : ''}\${status}</span>\`;
+  const label = status === 'awaiting_approval' ? 'needs approval' : status;
+  const spinner = (status === 'running' || status === 'planning') ? '<span class="spinner"></span>' : '';
+  return \`<span class="badge badge-\${status}">\${spinner}\${label}</span>\`;
 }
 
 function renderList(list) {
@@ -125,6 +136,15 @@ function renderDetail(job) {
     : job.error
     ? \`<div class="result-box result-error">Error: \${escHtml(job.error)}</div>\`
     : '';
+  const planHtml = job.status === 'awaiting_approval' && job.plan
+    ? \`<div class="plan-box"><div class="plan-label">Plan</div>\${escHtml(job.plan)}</div>\`
+    : '';
+  const approveBarHtml = job.status === 'awaiting_approval'
+    ? \`<div class="approve-bar">
+        <button class="btn-approve" onclick="approveJob('\${job.id}')">Approve &amp; Run</button>
+        <button class="btn-reject" onclick="rejectJob('\${job.id}')">Reject</button>
+      </div>\`
+    : '';
   document.getElementById('detail').innerHTML = \`
     <div class="detail-header">
       <div class="detail-prompt">\${escHtml(job.prompt)}</div>
@@ -136,8 +156,10 @@ function renderDetail(job) {
         \${job.cwd ? \`<span style="font-family:monospace">cwd: \${escHtml(job.cwd)}</span>\` : ''}
       </div>
     </div>
+    \${planHtml}
     <div class="log-feed" id="log-feed">\${logHtml || '<span style="color:#444;font-size:13px">No log entries yet</span>'}</div>
     \${resultHtml}
+    \${approveBarHtml}
   \`;
   const feed = document.getElementById('log-feed');
   if (feed) feed.scrollTop = feed.scrollHeight;
@@ -159,10 +181,24 @@ async function poll() {
   const list = await fetch('/jobs').then(r => r.json()).catch(() => []);
   list.forEach(j => { if (!jobs[j.id] || jobs[j.id].status !== j.status) jobs[j.id] = j; });
   renderList(list);
-  if (selectedId && jobs[selectedId] && ['pending','running'].includes(jobs[selectedId].status)) {
+  if (selectedId && jobs[selectedId] && ['pending','planning','awaiting_approval','running'].includes(jobs[selectedId].status)) {
     const job = await fetch('/jobs/' + selectedId).then(r => r.json()).catch(() => null);
     if (job) { jobs[selectedId] = job; renderDetail(job); }
   }
+}
+
+async function approveJob(id) {
+  await fetch('/jobs/' + id + '/approve', { method: 'POST' });
+  const job = await fetch('/jobs/' + id).then(r => r.json());
+  jobs[id] = job;
+  renderDetail(job);
+}
+
+async function rejectJob(id) {
+  await fetch('/jobs/' + id + '/reject', { method: 'POST' });
+  const job = await fetch('/jobs/' + id).then(r => r.json());
+  jobs[id] = job;
+  renderDetail(job);
 }
 
 async function submitJob() {
@@ -196,18 +232,55 @@ setInterval(poll, 2000);
 </html>
 `;
 
-const DEFAULT_TOOLS = ["Read", "Edit", "Glob"];
+const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"];
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "localhost";
 
-async function runJob(id: string, prompt: string, tools: string[], cwd: string | null): Promise<void> {
-  store.setStatus(id, "running");
+async function planJob(id: string, prompt: string, tools: string[], cwd: string | null): Promise<void> {
+  store.setStatus(id, "planning");
+  const planTexts: string[] = [];
   try {
     for await (const message of query({
       prompt,
       options: {
         allowedTools: tools,
+        permissionMode: "plan",
+        ...(cwd ? { cwd } : {}),
+      },
+    })) {
+      const ts = new Date().toISOString();
+      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
+      if (message.type === "assistant" && message.message?.content) {
+        for (const block of message.message.content) {
+          if ("text" in block) {
+            store.appendLog(id, { type: "text", text: block.text, ts });
+            planTexts.push(block.text);
+          } else if ("name" in block) {
+            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+          }
+        }
+      } else if (message.type === "result") {
+        const sessionId = (message as any).session_id ?? (message as any).sessionId;
+        if (sessionId) store.setSessionId(id, sessionId);
+      }
+    }
+    store.setPlan(id, planTexts.join("\n"));
+    store.setStatus(id, "awaiting_approval");
+  } catch (err) {
+    store.setError(id, err instanceof Error ? err.message : String(err));
+    store.setStatus(id, "failed");
+  }
+}
+
+async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
+  store.setStatus(id, "running");
+  try {
+    for await (const message of query({
+      prompt: "The plan has been approved. Please proceed with execution.",
+      options: {
+        allowedTools: tools,
         permissionMode: "acceptEdits",
+        resume: sessionId,
         ...(cwd ? { cwd } : {}),
       },
     })) {
@@ -292,7 +365,7 @@ Bun.serve({
 
       const id = randomUUID();
       store.createJob(id, prompt, tools, cwd);
-      Promise.resolve().then(() => runJob(id, prompt, tools, cwd));
+      Promise.resolve().then(() => planJob(id, prompt, tools, cwd));
 
       return json(202, { id, status: "pending" });
     }
@@ -303,6 +376,28 @@ Bun.serve({
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       return json(200, job);
+    }
+
+    const approveMatch = path.match(/^\/jobs\/([^/]+)\/approve$/);
+    if (req.method === "POST" && approveMatch) {
+      const id = approveMatch[1]!;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
+      if (!job.sessionId) return jsonError(500, "No session ID from planning phase");
+      Promise.resolve().then(() => executeJob(id, job.sessionId!, job.tools, job.cwd));
+      return json(202, { id, status: "running" });
+    }
+
+    const rejectMatch = path.match(/^\/jobs\/([^/]+)\/reject$/);
+    if (req.method === "POST" && rejectMatch) {
+      const id = rejectMatch[1]!;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
+      store.setError(id, "Rejected by user");
+      store.setStatus(id, "failed");
+      return json(200, { id, status: "failed" });
     }
 
     return jsonError(404, "Not found");

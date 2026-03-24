@@ -13,6 +13,8 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     startedAt: null,
     finishedAt: null,
     log: [],
+    plan: null,
+    sessionId: null,
     result: null,
     error: null,
   };
@@ -34,6 +36,18 @@ export function setStatus(id: string, status: JobStatus): void {
 
 export function appendLog(id: string, entry: LogEntry): void {
   jobs.get(id)?.log.push(entry);
+}
+
+export function setPlan(id: string, plan: string): void {
+  const job = jobs.get(id);
+  if (!job) return;
+  job.plan = plan;
+}
+
+export function setSessionId(id: string, sessionId: string): void {
+  const job = jobs.get(id);
+  if (!job) return;
+  job.sessionId = sessionId;
 }
 
 export function setResult(id: string, result: string): void {

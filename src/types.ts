@@ -1,4 +1,4 @@
-export type JobStatus = "pending" | "running" | "completed" | "failed";
+export type JobStatus = "pending" | "planning" | "awaiting_approval" | "running" | "completed" | "failed";
 
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
@@ -14,6 +14,8 @@ export interface Job {
   finishedAt: string | null;
   log: LogEntry[];
   cwd: string | null;
+  plan: string | null;
+  sessionId: string | null;
   result: string | null;
   error: string | null;
 }
