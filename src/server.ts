@@ -190,7 +190,7 @@ Bun.serve({
         cwd = b["cwd"];
       }
 
-      const id = randomUUID();
+      const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
       store.createJob(id, prompt, tools, cwd);
       Promise.resolve().then(() => planJob(id, prompt, tools, cwd));
 
