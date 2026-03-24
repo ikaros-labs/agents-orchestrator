@@ -2,6 +2,7 @@ export type JobStatus = "pending" | "planning" | "awaiting_approval" | "running"
 
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
+  | { type: "user"; text: string; ts: string }
   | { type: "tool_call"; name: string; input?: Record<string, unknown>; ts: string }
   | { type: "image"; mediaType: string; url: string; ts: string };
 

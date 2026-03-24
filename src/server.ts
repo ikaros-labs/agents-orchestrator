@@ -157,6 +157,7 @@ async function executeJob(id: string, sessionId: string, tools: string[], cwd: s
 async function followUpJob(id: string, prompt: string, sessionId: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
   store.setStatus(id, "running");
   store.clearResult(id);
+  store.appendLog(id, { type: "user", text: prompt, ts: new Date().toISOString() });
   let imageCounter = 0;
   try {
     const promptArg = rawImages.length > 0

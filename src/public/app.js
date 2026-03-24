@@ -14,6 +14,22 @@ function fileToBase64(file) {
   });
 }
 
+async function handlePastedImages(e, imageArray, renderFn) {
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItems = items.filter(item => item.kind === 'file' && item.type.startsWith('image/'));
+  if (imageItems.length === 0) return; // nothing to do — let default paste proceed
+  e.preventDefault(); // stop browser from inserting raw image data as text
+  for (const item of imageItems) {
+    const file = item.getAsFile();
+    if (!file) continue;
+    try {
+      const data = await fileToBase64(file);
+      imageArray.push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file) });
+    } catch { /* skip unreadable items */ }
+  }
+  renderFn();
+}
+
 document.getElementById('image-input').addEventListener('change', async (e) => {
   for (const file of Array.from(e.target.files)) {
     try {
@@ -88,6 +104,9 @@ function toolDetail(name, input) {
 }
 
 function renderLogEntry(e) {
+  if (e.type === 'user') {
+    return `<div class="log-user">${escHtml(e.text)}</div>`;
+  }
   if (e.type === 'text') {
     return `<div class="log-text">${escHtml(e.text)}</div>`;
   }
@@ -119,9 +138,6 @@ function renderDetail(job) {
     ? `<div class="result-box result-success">Result: ${escHtml(job.result)}</div>`
     : job.error
     ? `<div class="result-box result-error">Error: ${escHtml(job.error)}</div>`
-    : '';
-  const planHtml = job.status === 'awaiting_approval' && job.plan
-    ? `<div class="plan-box"><div class="plan-label">Plan</div>${escHtml(job.plan)}</div>`
     : '';
   const approveBarHtml = job.status === 'awaiting_approval'
     ? `<div class="approve-bar">
@@ -166,7 +182,6 @@ function renderDetail(job) {
         ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
       </div>
     </div>
-    ${planHtml}
     <div class="log-feed" id="log-feed">${logHtml || '<span style="color:#444;font-size:13px">No log entries yet</span>'}</div>
     ${resultHtml}
     ${approveBarHtml}
@@ -186,6 +201,10 @@ function renderDetail(job) {
   if (followupTa) {
     followupTa.addEventListener('keydown', e => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendFollowUp(job.id);
+    });
+    followupTa.addEventListener('paste', async (e) => {
+      if (!followupImages[job.id]) followupImages[job.id] = [];
+      await handlePastedImages(e, followupImages[job.id], () => renderFollowupPreviews(job.id));
     });
   }
 }
@@ -290,6 +309,14 @@ async function sendFollowUp(id) {
     (followupImages[id] || []).forEach(img => URL.revokeObjectURL(img.objectUrl));
     delete followupImages[id];
     selectedId = id;
+    // Unconditionally refresh the detail view so the user prompt appears immediately,
+    // even if the follow-up completes before the next poll() status-change check.
+    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
+    if (refreshed) {
+      jobs[id] = refreshed;
+      renderDetailFresh = true;
+      renderDetail(refreshed);
+    }
     await poll();
   } finally {
     btn.disabled = false; btn.textContent = 'Send Follow-up';
@@ -325,6 +352,9 @@ async function submitJob() {
 
 document.getElementById('prompt').addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitJob();
+});
+document.getElementById('prompt').addEventListener('paste', async (e) => {
+  await handlePastedImages(e, pendingImages, renderImagePreviews);
 });
 
 poll();

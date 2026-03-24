@@ -43,8 +43,6 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .result-error { background: #2a0d0d; border: 1px solid #7f1d1d; color: #f87171; }
 .spinner { display: inline-block; width: 8px; height: 8px; border: 2px solid #38bdf8; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.plan-box { margin: 0 20px 0; padding: 14px 16px; background: #161225; border: 1px solid #2e2060; border-radius: 6px; font-size: 13px; color: #c4b5fd; line-height: 1.6; white-space: pre-wrap; word-break: break-word; flex-shrink: 0; max-height: 40%; overflow-y: auto; }
-.plan-label { font-size: 11px; font-weight: 600; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
 .approve-bar { display: flex; gap: 10px; padding: 12px 20px; border-top: 1px solid #2a2a2a; flex-shrink: 0; }
 .btn-approve { background: #166534; color: #4ade80; border: 1px solid #166534; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-approve:hover { background: #15803d; }
@@ -77,6 +75,10 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 
 /* Image badge on job list items */
 .job-image-badge { font-size: 10px; color: #555; margin-top: 3px; }
+
+/* User follow-up prompt log entries */
+.log-user { align-self: flex-end; background: #0d1f35; border: 1px solid #1e4a7a; border-radius: 6px; padding: 6px 12px; font-size: 13px; color: #93c5fd; white-space: pre-wrap; word-break: break-word; max-width: 85%; }
+.log-user::before { content: "You: "; font-weight: 600; color: #60a5fa; }
 
 /* Image log entries */
 .log-image { align-self: flex-start; }
