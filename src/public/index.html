@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agents Orchestrator</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header><h1>Agents Orchestrator</h1></header>
+<div class="create-form">
+  <textarea id="prompt" placeholder="Enter a prompt for the agent..." rows="3"></textarea>
+  <div class="form-right">
+    <input type="text" id="tools" value="Read, Edit, Glob, Write, Grep, WebSearch, WebFetch, AskUserQuestion" placeholder="Tools (comma-separated)">
+    <input type="text" id="cwd" placeholder="Working directory (optional)">
+    <button id="submit-btn" onclick="submitJob()">Run Agent</button>
+  </div>
+</div>
+<div class="main">
+  <div class="job-list" id="job-list"><div class="job-list-empty">No jobs yet</div></div>
+  <div class="detail" id="detail"><div class="detail-empty">Select a job to see details</div></div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
