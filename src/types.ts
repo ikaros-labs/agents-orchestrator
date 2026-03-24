@@ -2,7 +2,7 @@ export type JobStatus = "pending" | "running" | "completed" | "failed";
 
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
-  | { type: "tool_call"; name: string; ts: string };
+  | { type: "tool_call"; name: string; input?: Record<string, unknown>; ts: string };
 
 export interface Job {
   id: string;
@@ -13,6 +13,7 @@ export interface Job {
   startedAt: string | null;
   finishedAt: string | null;
   log: LogEntry[];
+  cwd: string | null;
   result: string | null;
   error: string | null;
 }

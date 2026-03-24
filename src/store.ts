@@ -2,12 +2,13 @@ import type { Job, JobStatus, LogEntry } from "./types.ts";
 
 const jobs = new Map<string, Job>();
 
-export function createJob(id: string, prompt: string, tools: string[]): Job {
+export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null): Job {
   const job: Job = {
     id,
     status: "pending",
     prompt,
     tools,
+    cwd,
     createdAt: new Date().toISOString(),
     startedAt: null,
     finishedAt: null,

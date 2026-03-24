@@ -9,9 +9,12 @@ bun run dev   # watch mode
 bun run start # production
 ```
 
+Runtime and package manager: **bun**
+
 ## API
 
-- `POST /jobs` — submit a job: `{ prompt: string, tools?: string[] }` → `{ id, status: "pending" }`
+- `POST /jobs` — submit a job: `{ prompt: string, tools?: string[], cwd?: string }` → `{ id, status: "pending" }`
+- `GET /jobs` — list all jobs
 - `GET /jobs/:id` — get job status and result
 
 ## Project structure

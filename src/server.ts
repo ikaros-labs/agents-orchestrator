@@ -1,6 +1,10 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
+import { appendFile, mkdir } from "node:fs/promises";
 import * as store from "./store.ts";
+
+const LOGS_DIR = "./logs";
+await mkdir(LOGS_DIR, { recursive: true });
 
 const UI_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -60,6 +64,7 @@ const UI_HTML = `<!DOCTYPE html>
   <textarea id="prompt" placeholder="Enter a prompt for the agent..." rows="3"></textarea>
   <div class="form-right">
     <input type="text" id="tools" value="Read, Edit, Glob" placeholder="Tools (comma-separated)">
+    <input type="text" id="cwd" placeholder="Working directory (optional)">
     <button id="submit-btn" onclick="submitJob()">Run Agent</button>
   </div>
 </div>
@@ -92,8 +97,18 @@ function renderList(list) {
         <span class="job-time">\${relTime(j.createdAt)}</span>
       </div>
       <div class="job-prompt">\${escHtml(j.prompt)}</div>
+      \${j.cwd ? \`<div style="font-size:10px;color:#555;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">\${escHtml(j.cwd)}</div>\` : ''}
     </div>
   \`).join('');
+}
+
+function toolDetail(name, input) {
+  if (!input) return '';
+  let detail = '';
+  if (name === 'Glob') detail = input.pattern ?? '';
+  else if (name === 'Bash') detail = input.description || (input.command ? String(input.command).slice(0, 80) : '');
+  else detail = Object.values(input).find(v => typeof v === 'string') ?? '';
+  return detail ? \` <span style="opacity:0.6;font-weight:400">\${escHtml(String(detail))}</span>\` : '';
 }
 
 function renderDetail(job) {
@@ -103,7 +118,7 @@ function renderDetail(job) {
   const logHtml = job.log.map(e =>
     e.type === 'text'
       ? \`<div class="log-text">\${escHtml(e.text)}</div>\`
-      : \`<div class="log-tool">\${escHtml(e.name)}</div>\`
+      : \`<div class="log-tool">\${escHtml(e.name)}\${toolDetail(e.name, e.input)}</div>\`
   ).join('');
   const resultHtml = job.result
     ? \`<div class="result-box result-success">Result: \${escHtml(job.result)}</div>\`
@@ -118,6 +133,7 @@ function renderDetail(job) {
         <span>Started: \${started}</span>
         <span>Finished: \${finished}</span>
         <span>Tools: \${job.tools.join(', ')}</span>
+        \${job.cwd ? \`<span style="font-family:monospace">cwd: \${escHtml(job.cwd)}</span>\` : ''}
       </div>
     </div>
     <div class="log-feed" id="log-feed">\${logHtml || '<span style="color:#444;font-size:13px">No log entries yet</span>'}</div>
@@ -154,10 +170,12 @@ async function submitJob() {
   if (!prompt) return;
   const toolsRaw = document.getElementById('tools').value.trim();
   const tools = toolsRaw ? toolsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['Read','Edit','Glob'];
+  const cwdVal = document.getElementById('cwd').value.trim();
+  const body = cwdVal ? {prompt, tools, cwd: cwdVal} : {prompt, tools};
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting...';
   try {
-    const res = await fetch('/jobs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({prompt, tools}) });
+    const res = await fetch('/jobs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const job = await res.json();
     document.getElementById('prompt').value = '';
     selectedId = job.id;
@@ -181,7 +199,7 @@ setInterval(poll, 2000);
 const DEFAULT_TOOLS = ["Read", "Edit", "Glob"];
 const PORT = Number(process.env.PORT ?? 3000);
 
-async function runJob(id: string, prompt: string, tools: string[]): Promise<void> {
+async function runJob(id: string, prompt: string, tools: string[], cwd: string | null): Promise<void> {
   store.setStatus(id, "running");
   try {
     for await (const message of query({
@@ -189,15 +207,17 @@ async function runJob(id: string, prompt: string, tools: string[]): Promise<void
       options: {
         allowedTools: tools,
         permissionMode: "acceptEdits",
+        ...(cwd ? { cwd } : {}),
       },
     })) {
       const ts = new Date().toISOString();
+      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
       if (message.type === "assistant" && message.message?.content) {
         for (const block of message.message.content) {
           if ("text" in block) {
             store.appendLog(id, { type: "text", text: block.text, ts });
           } else if ("name" in block) {
-            store.appendLog(id, { type: "tool_call", name: block.name, ts });
+            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
           }
         }
       } else if (message.type === "result") {
@@ -260,9 +280,17 @@ Bun.serve({
         tools = b["tools"] as string[];
       }
 
+      let cwd: string | null = null;
+      if ("cwd" in b) {
+        if (typeof b["cwd"] !== "string") {
+          return jsonError(400, "cwd must be a string");
+        }
+        cwd = b["cwd"];
+      }
+
       const id = randomUUID();
-      store.createJob(id, prompt, tools);
-      Promise.resolve().then(() => runJob(id, prompt, tools));
+      store.createJob(id, prompt, tools, cwd);
+      Promise.resolve().then(() => runJob(id, prompt, tools, cwd));
 
       return json(202, { id, status: "pending" });
     }
