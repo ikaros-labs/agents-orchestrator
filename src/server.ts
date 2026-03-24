@@ -138,6 +138,51 @@ async function planJob(id: string, prompt: string, tools: string[], cwd: string 
   }
 }
 
+async function revisePlanJob(id: string, feedback: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
+  store.setStatus(id, "planning");
+  store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
+  const planTexts: string[] = [];
+  let imageCounter = 0;
+  try {
+    for await (const message of query({
+      prompt: feedback,
+      options: {
+        allowedTools: tools,
+        permissionMode: "plan",
+        resume: sessionId,
+        ...(cwd ? { cwd } : {}),
+      },
+    })) {
+      const ts = new Date().toISOString();
+      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
+      if (message.type === "assistant" && message.message?.content) {
+        for (const block of message.message.content) {
+          if ("text" in block) {
+            store.appendLog(id, { type: "text", text: block.text, ts });
+            planTexts.push(block.text);
+          } else if ("name" in block) {
+            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+          } else if ((block as any).type === "image") {
+            const b = block as any;
+            if (b.source?.type === "base64") {
+              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
+              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+            }
+          }
+        }
+      } else if (message.type === "result") {
+        const newSessionId = (message as any).session_id ?? (message as any).sessionId;
+        if (newSessionId) store.setSessionId(id, newSessionId);
+      }
+    }
+    store.setPlan(id, planTexts.join("\n"));
+    store.setStatus(id, "awaiting_approval");
+  } catch (err) {
+    store.setError(id, err instanceof Error ? err.message : String(err));
+    store.setStatus(id, "failed");
+  }
+}
+
 async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
   store.setStatus(id, "running");
   let imageCounter = 0;
@@ -385,6 +430,23 @@ Bun.serve({
       store.setError(id, "Rejected by user");
       store.setStatus(id, "failed");
       return json(200, { id, status: "failed" });
+    }
+
+    const reviseMatch = path.match(/^\/jobs\/([^/]+)\/revise$/);
+    if (req.method === "POST" && reviseMatch) {
+      const id = reviseMatch[1]!;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
+      if (!job.sessionId) return jsonError(500, "No session ID available for revision");
+      let body: unknown;
+      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
+      const b = body as Record<string, unknown>;
+      if (typeof b["prompt"] !== "string" || b["prompt"].trim() === "") {
+        return jsonError(400, "prompt must be a non-empty string");
+      }
+      Promise.resolve().then(() => revisePlanJob(id, (b["prompt"] as string).trim(), job.sessionId!, job.tools, job.cwd));
+      return json(202, { id, status: "planning" });
     }
 
     const followupMatch = path.match(/^\/jobs\/([^/]+)\/followup$/);

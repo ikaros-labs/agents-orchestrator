@@ -149,8 +149,23 @@ function renderDetail(job) {
     : '';
   const approveBarHtml = job.status === 'awaiting_approval'
     ? `<div class="approve-bar">
-        <button class="btn-approve" onclick="approveJob('${job.id}')">Approve &amp; Run</button>
-        <button class="btn-reject" onclick="rejectJob('${job.id}')">Reject</button>
+        <div class="approve-actions">
+          <button class="btn-approve" onclick="approveJob('${job.id}')">Approve &amp; Run</button>
+          <button class="btn-reject" onclick="rejectJob('${job.id}')">Reject</button>
+        </div>
+        <div class="approve-revise">
+          <div class="followup-input-row">
+            <textarea id="revise-prompt-${job.id}" placeholder="Request changes to the plan..." rows="2"></textarea>
+          </div>
+          <div class="followup-actions">
+            <label class="attach-btn attach-btn-sm" for="revise-image-input-${job.id}" title="Attach files">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </label>
+            <input type="file" id="revise-image-input-${job.id}" accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/html,text/csv,text/xml" multiple style="display:none" onchange="handleReviseImages('${job.id}', this)">
+            <button class="btn-followup" id="revise-btn-${job.id}" onclick="requestChanges('${job.id}')">Request Changes</button>
+          </div>
+          <div id="revise-previews-${job.id}" class="image-previews"></div>
+        </div>
       </div>`
     : '';
   const followupBarHtml = (job.status === 'completed' || job.status === 'failed') && job.sessionId
@@ -168,6 +183,13 @@ function renderDetail(job) {
         <div id="followup-previews-${job.id}" class="image-previews"></div>
       </div>`
     : '';
+  // Preserve textarea contents and focus across DOM rebuilds (polling would otherwise erase typed text)
+  const _reviseTaVal = (document.getElementById('revise-prompt-' + job.id) || {}).value || '';
+  const _followupTaVal = (document.getElementById('followup-prompt-' + job.id) || {}).value || '';
+  const _activeId = document.activeElement && document.activeElement.id ? document.activeElement.id : '';
+  const _selStart = _activeId ? document.activeElement.selectionStart : null;
+  const _selEnd   = _activeId ? document.activeElement.selectionEnd   : null;
+
   // Capture scroll state before destroying and recreating #log-feed
   const _oldFeed = document.getElementById('log-feed');
   let _oldScrollTop = 0, _oldScrollHeight = 0, _scrollWasAtBottom = true;
@@ -205,6 +227,26 @@ function renderDetail(job) {
     }
     renderDetailFresh = false; // consume the flag
   }
+  // Restore textarea values and focus that were saved before the DOM rebuild
+  if (_reviseTaVal) { const el = document.getElementById('revise-prompt-' + job.id); if (el) el.value = _reviseTaVal; }
+  if (_followupTaVal) { const el = document.getElementById('followup-prompt-' + job.id); if (el) el.value = _followupTaVal; }
+  if (_activeId) {
+    const el = document.getElementById(_activeId);
+    if (el) { el.focus(); if (_selStart !== null && el.setSelectionRange) el.setSelectionRange(_selStart, _selEnd); }
+  }
+  // Re-render any pending image previews (they live outside the rebuilt HTML)
+  renderRevisePreviews(job.id);
+  renderFollowupPreviews(job.id);
+  const reviseTa = document.getElementById('revise-prompt-' + job.id);
+  if (reviseTa) {
+    reviseTa.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) requestChanges(job.id);
+    });
+    reviseTa.addEventListener('paste', async (e) => {
+      if (!reviseImages[job.id]) reviseImages[job.id] = [];
+      await handlePastedFiles(e, reviseImages[job.id], () => renderRevisePreviews(job.id));
+    });
+  }
   const followupTa = document.getElementById('followup-prompt-' + job.id);
   if (followupTa) {
     followupTa.addEventListener('keydown', e => {
@@ -217,8 +259,9 @@ function renderDetail(job) {
   }
 }
 
-// ── Follow-up file handling ────────────────────────────────────────────────
+// ── Follow-up / revise file handling ──────────────────────────────────────
 const followupImages = {}; // jobId → [{ mediaType, data, objectUrl, name }]
+const reviseImages = {};   // jobId → [{ mediaType, data, objectUrl, name }]
 
 async function handleFollowupImages(jobId, input) {
   if (!followupImages[jobId]) followupImages[jobId] = [];
@@ -244,6 +287,32 @@ function removeFollowupImage(jobId, index) {
   URL.revokeObjectURL(imgs[index].objectUrl);
   imgs.splice(index, 1);
   renderFollowupPreviews(jobId);
+}
+
+async function handleReviseImages(jobId, input) {
+  if (!reviseImages[jobId]) reviseImages[jobId] = [];
+  for (const file of Array.from(input.files)) {
+    try {
+      const data = await fileToBase64(file);
+      reviseImages[jobId].push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file), name: file.name });
+    } catch { /* skip */ }
+  }
+  input.value = '';
+  renderRevisePreviews(jobId);
+}
+
+function renderRevisePreviews(jobId) {
+  const el = document.getElementById('revise-previews-' + jobId);
+  if (!el) return;
+  const files = reviseImages[jobId] || [];
+  el.innerHTML = files.map((f, i) => filePreviewHtml(f, `removeReviseImage('${jobId}',${i})`)).join('');
+}
+
+function removeReviseImage(jobId, index) {
+  const imgs = reviseImages[jobId] || [];
+  URL.revokeObjectURL(imgs[index].objectUrl);
+  imgs.splice(index, 1);
+  renderRevisePreviews(jobId);
 }
 
 // ── API actions ────────────────────────────────────────────────────────────
@@ -290,6 +359,37 @@ async function rejectJob(id) {
   jobs[id] = job;
   renderDetailFresh = true; // job just transitioned, scroll to bottom
   renderDetail(job);
+}
+
+async function requestChanges(id) {
+  const ta = document.getElementById('revise-prompt-' + id);
+  const btn = document.getElementById('revise-btn-' + id);
+  const prompt = ta.value.trim();
+  if (!prompt) return;
+  btn.disabled = true; btn.textContent = 'Sending...';
+  const imgs = reviseImages[id] || [];
+  const body = { prompt };
+  if (imgs.length) body.images = imgs.map(({ mediaType, data }) => ({ mediaType, data }));
+  try {
+    await fetch('/jobs/' + id + '/revise', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    ta.value = '';
+    (reviseImages[id] || []).forEach(img => URL.revokeObjectURL(img.objectUrl));
+    delete reviseImages[id];
+    selectedId = id;
+    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
+    if (refreshed) {
+      jobs[id] = refreshed;
+      renderDetailFresh = true;
+      renderDetail(refreshed);
+    }
+    await poll();
+  } finally {
+    btn.disabled = false; btn.textContent = 'Request Changes';
+  }
 }
 
 async function sendFollowUp(id) {
