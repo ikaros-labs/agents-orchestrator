@@ -230,16 +230,27 @@ async function selectJob(id) {
   document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(id)));
   const job = await fetch('/jobs/' + id).then(r => r.json());
   jobs[id] = job;
+  renderDetailFresh = true; // fresh view, always scroll to bottom
   renderDetail(job);
 }
 
 async function poll() {
   const list = await fetch('/jobs').then(r => r.json()).catch(() => []);
+  const prevSelectedStatus = selectedId && jobs[selectedId] ? jobs[selectedId].status : null;
   list.forEach(j => { if (!jobs[j.id] || jobs[j.id].status !== j.status) jobs[j.id] = j; });
   renderList(list);
-  if (selectedId && jobs[selectedId] && ['pending','planning','awaiting_approval','running'].includes(jobs[selectedId].status)) {
-    const job = await fetch('/jobs/' + selectedId).then(r => r.json()).catch(() => null);
-    if (job) { jobs[selectedId] = job; renderDetail(job); }
+  if (selectedId && jobs[selectedId]) {
+    const activeStatuses = ['pending', 'planning', 'awaiting_approval', 'running'];
+    const statusChanged = prevSelectedStatus !== jobs[selectedId].status;
+    if (activeStatuses.includes(jobs[selectedId].status) || statusChanged) {
+      const job = await fetch('/jobs/' + selectedId).then(r => r.json()).catch(() => null);
+      if (job) {
+        // If the status changed, the layout shifts (new buttons appear/disappear) — scroll to bottom
+        if (jobs[selectedId].status !== job.status) renderDetailFresh = true;
+        jobs[selectedId] = job;
+        renderDetail(job);
+      }
+    }
   }
 }
 
@@ -247,6 +258,7 @@ async function approveJob(id) {
   await fetch('/jobs/' + id + '/approve', { method: 'POST' });
   const job = await fetch('/jobs/' + id).then(r => r.json());
   jobs[id] = job;
+  renderDetailFresh = true; // job just transitioned, scroll to bottom
   renderDetail(job);
 }
 
@@ -254,6 +266,7 @@ async function rejectJob(id) {
   await fetch('/jobs/' + id + '/reject', { method: 'POST' });
   const job = await fetch('/jobs/' + id).then(r => r.json());
   jobs[id] = job;
+  renderDetailFresh = true; // job just transitioned, scroll to bottom
   renderDetail(job);
 }
 
