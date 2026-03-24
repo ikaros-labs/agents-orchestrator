@@ -198,6 +198,7 @@ setInterval(poll, 2000);
 
 const DEFAULT_TOOLS = ["Read", "Edit", "Glob"];
 const PORT = Number(process.env.PORT ?? 3000);
+const HOST = process.env.HOST ?? "localhost";
 
 async function runJob(id: string, prompt: string, tools: string[], cwd: string | null): Promise<void> {
   store.setStatus(id, "running");
@@ -244,6 +245,7 @@ function jsonError(status: number, message: string): Response {
 
 Bun.serve({
   port: PORT,
+  hostname: HOST,
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -307,4 +309,4 @@ Bun.serve({
   },
 });
 
-console.log(`Listening on http://localhost:${PORT}`);
+console.log(`Listening on http://${HOST}:${PORT}`);
