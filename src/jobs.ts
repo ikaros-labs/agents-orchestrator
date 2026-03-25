@@ -46,6 +46,7 @@ export const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearc
 const WORKTREE_SYSTEM_PROMPT_APPEND = `
 You are running inside a git worktree that has already been set up for you.
 - Do NOT create a new branch or a new worktree.
+- All bash commands and other tools must be run inside this worktree directory, not in the original parent repository.
 - After completing your changes, consider whether a pull request should be opened via the GitHub CLI (\`gh pr create\`) and do so if appropriate.
 `;
 
