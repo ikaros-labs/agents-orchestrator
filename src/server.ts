@@ -27,7 +27,7 @@ function makeCanUseTool(id: string) {
     // Deny ExitPlanMode so the planning query ends cleanly here.
     // Execution is triggered separately via executeJob() once the user approves the plan.
     if (toolName === "ExitPlanMode") {
-      return { behavior: "deny", message: "Awaiting plan approval from user." };
+      return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
     }
     store.setPendingTool(id, toolName, input as Record<string, unknown>);
     if (toolName === "AskUserQuestion") {
