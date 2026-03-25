@@ -273,7 +273,7 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     store.setPlan(id, planTexts.join("\n"));
@@ -291,7 +291,7 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
   try {
     const stream = query({
       prompt: feedback,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     store.setPlan(id, planTexts.join("\n"));
@@ -310,7 +310,7 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
     store.setStatus(id, "completed");
@@ -326,7 +326,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   try {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     store.setStatus(id, "completed");
@@ -347,7 +347,7 @@ export async function followUpJob(id: string, prompt: string, sessionId: string,
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     store.setStatus(id, "completed");
