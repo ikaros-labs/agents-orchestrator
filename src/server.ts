@@ -213,7 +213,7 @@ async function directExecuteJob(id: string, prompt: string, tools: string[], cwd
     for await (const message of query({
       prompt: promptArg as any,
       options: {
-        permissionMode: "default",
+        permissionMode: "acceptEdits",
         canUseTool: makeCanUseTool(id),
         ...(cwd ? { cwd } : {}),
       },
@@ -254,7 +254,7 @@ async function executeJob(id: string, sessionId: string, tools: string[], cwd: s
     for await (const message of query({
       prompt: "The plan has been approved. Please proceed with execution.",
       options: {
-        permissionMode: "default",
+        permissionMode: "acceptEdits",
         canUseTool: makeCanUseTool(id),
         resume: sessionId,
         ...(cwd ? { cwd } : {}),
@@ -301,7 +301,7 @@ async function followUpJob(id: string, prompt: string, sessionId: string, tools:
     for await (const message of query({
       prompt: promptArg as any,
       options: {
-        permissionMode: "default",
+        permissionMode: "acceptEdits",
         canUseTool: makeCanUseTool(id),
         resume: sessionId,
         ...(cwd ? { cwd } : {}),
