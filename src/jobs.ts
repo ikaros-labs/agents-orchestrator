@@ -239,7 +239,8 @@ async function createWorktree(cwd: string, jobId: string): Promise<string> {
   const worktreesParent = WORKTREES_DIR;
   await mkdir(worktreesParent, { recursive: true });
   const worktreePath = join(worktreesParent, jobId);
-  await execFileAsync("git", ["-C", gitRoot, "worktree", "add", "--detach", worktreePath]);
+  const branchName = `agent/${jobId}`;
+  await execFileAsync("git", ["-C", gitRoot, "worktree", "add", "-b", branchName, worktreePath]);
   return worktreePath;
 }
 
