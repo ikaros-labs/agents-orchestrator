@@ -5,6 +5,8 @@ import * as jobs from "./jobs.ts";
 import { CreateJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
 import type { JobMode } from "./types.ts";
 
+const sseEncoder = new TextEncoder();
+
 store.loadStore();
 
 const UI_HTML = await Bun.file(new URL("./public/index.html", import.meta.url)).text();
@@ -50,6 +52,7 @@ const EXT_CONTENT_TYPE: Record<string, string> = {
 Bun.serve({
   port: PORT,
   hostname: HOST,
+  idleTimeout: 0, // disable idle timeout so SSE connections are never closed by inactivity
 
   routes: {
     // ── Static assets ──────────────────────────────────────────────────────
@@ -79,6 +82,54 @@ Bun.serve({
       const ext = filename.split(".").pop()?.toLowerCase() ?? "";
       return new Response(file, {
         headers: { "Content-Type": EXT_CONTENT_TYPE[ext] ?? "application/octet-stream" },
+      });
+    },
+
+    // ── SSE event stream ───────────────────────────────────────────────────
+
+    "/events": () => {
+      let unsubscribe: (() => void) | null = null;
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+      const stream = new ReadableStream({
+        start(controller) {
+          // Bootstrap the client with the full current job list
+          const snapshot = store.listJobs();
+          controller.enqueue(sseEncoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
+
+          // Forward every store mutation as a typed SSE event
+          unsubscribe = store.subscribe((event) => {
+            try {
+              controller.enqueue(sseEncoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`));
+            } catch {
+              // Stream already closed — subscriber will be cleaned up in cancel()
+            }
+          });
+
+          // Keep the connection alive through proxies / load balancers.
+          // 8s is safely below common proxy idle timeouts (nginx default: 60s, but
+          // some intermediaries use 10s) and well below our own idleTimeout: 0 setting.
+          heartbeat = setInterval(() => {
+            try {
+              controller.enqueue(sseEncoder.encode(":\n\n"));
+            } catch {
+              if (heartbeat) clearInterval(heartbeat);
+            }
+          }, 8_000);
+        },
+        cancel() {
+          if (unsubscribe) unsubscribe();
+          if (heartbeat) clearInterval(heartbeat);
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no", // disable nginx buffering if present
+        },
       });
     },
 

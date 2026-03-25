@@ -72,8 +72,6 @@ function relTime(iso) {
 
 // Statuses that display an animated spinner in the badge
 const SPINNER_STATUSES = new Set(['running', 'planning', 'awaiting_tool_approval', 'awaiting_user_question']);
-// Statuses that indicate a job is still in progress (triggers detail polling)
-const ACTIVE_STATUSES = new Set(['pending', 'planning', 'awaiting_approval', 'awaiting_tool_approval', 'awaiting_user_question', 'running']);
 
 function badge(status) {
   const labels = {
@@ -334,7 +332,7 @@ async function answerQuestion(id) {
     delete questionAnswers[id];
     const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(err => { console.warn('[answerQuestion] failed to refresh job:', err); return null; });
     if (refreshed) { jobs[id] = refreshed; renderDetailFresh = true; renderDetail(refreshed); }
-    await poll();
+    // SSE will deliver subsequent log_entry and job_status events
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Submit Answers'; }
   }
@@ -540,54 +538,111 @@ async function selectJob(id) {
   renderDetail(job);
 }
 
-async function poll() {
-  const list = await fetch('/jobs').then(r => r.json()).catch(err => { console.warn('[poll] failed to fetch job list:', err); return []; });
-  const prevSelectedStatus = selectedId && jobs[selectedId] ? jobs[selectedId].status : null;
-  list.forEach(j => { if (!jobs[j.id] || jobs[j.id].status !== j.status) jobs[j.id] = j; });
-  renderList(list);
-  updateCwdSelect(list);
-  if (selectedId && jobs[selectedId]) {
-    const statusChanged = prevSelectedStatus !== jobs[selectedId].status;
-    if (ACTIVE_STATUSES.has(jobs[selectedId].status) || statusChanged) {
-      const job = await fetch('/jobs/' + selectedId).then(r => r.json()).catch(err => { console.warn('[poll] failed to fetch job detail:', err); return null; });
-      if (job) {
-        // If the status changed, the layout shifts (new buttons appear/disappear) — scroll to bottom
-        if (jobs[selectedId].status !== job.status) renderDetailFresh = true;
-        jobs[selectedId] = job;
-        renderDetail(job);
-      }
-    }
+// ── SSE real-time updates ───────────────────────────────────────────────────
+
+/** Sort jobs by latest user-message time, mirroring the server's listJobs() order. */
+function _latestUserMsgTime(job) {
+  const times = (job.log || []).filter(e => e.type === 'user').map(e => new Date(e.ts).getTime());
+  return Math.max(new Date(job.createdAt).getTime(), ...times, 0);
+}
+function getSortedJobs() {
+  return Object.values(jobs).sort((a, b) => _latestUserMsgTime(b) - _latestUserMsgTime(a));
+}
+
+/**
+ * Append a single log entry to the visible #log-feed without rebuilding the
+ * entire detail panel. Only runs when jobId === selectedId and the feed exists.
+ */
+function appendLogEntryDOM(entry, jobId) {
+  if (jobId !== selectedId) return;
+  const feed = document.getElementById('log-feed');
+  if (!feed) return;
+  const html = renderLogEntry(entry);
+  if (!html) return;
+  // Remove the "No log entries yet" placeholder on first real entry
+  if (!feed.querySelector('.log-text, .log-user, .log-tool, .log-image')) {
+    feed.innerHTML = '';
   }
+  const wasAtBottom = (feed.scrollHeight - feed.clientHeight - feed.scrollTop) <= 80;
+  feed.insertAdjacentHTML('beforeend', html);
+  if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
+}
+
+function initSSE() {
+  const es = new EventSource('/events');
+
+  // Initial snapshot: full current state of all jobs (sent on every connect/reconnect)
+  es.addEventListener('snapshot', e => {
+    const list = JSON.parse(e.data);
+    list.forEach(j => { jobs[j.id] = j; });
+    renderList(list); // already server-sorted
+    updateCwdSelect(list);
+    if (selectedId && jobs[selectedId]) renderDetail(jobs[selectedId]);
+  });
+
+  // A brand-new job was created
+  es.addEventListener('job_created', e => {
+    const { job } = JSON.parse(e.data);
+    jobs[job.id] = job;
+    const sorted = getSortedJobs();
+    renderList(sorted);
+    updateCwdSelect(sorted);
+    if (selectedId === job.id) {
+      renderDetailFresh = true;
+      renderDetail(job);
+    }
+  });
+
+  // Job metadata changed: status, result, error, plan, pendingTools, timestamps
+  es.addEventListener('job_status', e => {
+    const data = JSON.parse(e.data);
+    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools } = data;
+    const job = jobs[jobId];
+    if (!job) return;
+    const prevStatus = job.status;
+    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools });
+    renderList(getSortedJobs());
+    if (jobId === selectedId) {
+      if (prevStatus !== status) renderDetailFresh = true;
+      renderDetail(job);
+    }
+  });
+
+  // A new log entry was appended — stream it directly into the feed DOM
+  es.addEventListener('log_entry', e => {
+    const { jobId, entry, index } = JSON.parse(e.data);
+    const job = jobs[jobId];
+    if (!job) return;
+    // Keep the local log array in sync (sparse-safe)
+    while (job.log.length <= index) job.log.push(null);
+    job.log[index] = entry;
+    appendLogEntryDOM(entry, jobId);
+  });
+
+  es.onerror = () => {
+    // EventSource auto-reconnects; the snapshot event on reconnect re-bootstraps state
+    console.warn('[SSE] connection lost, reconnecting…');
+  };
 }
 
 async function approveToolUse(id, toolUseID) {
   await fetch('/jobs/' + id + '/approve-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolUseID }) });
-  const job = await fetch('/jobs/' + id).then(r => r.json());
-  jobs[id] = job;
-  renderDetail(job);
+  // SSE job_status event will update the detail panel
 }
 
 async function rejectToolUse(id, toolUseID) {
   await fetch('/jobs/' + id + '/reject-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolUseID }) });
-  const job = await fetch('/jobs/' + id).then(r => r.json());
-  jobs[id] = job;
-  renderDetail(job);
+  // SSE job_status event will update the detail panel
 }
 
 async function approveJob(id) {
   await fetch('/jobs/' + id + '/approve', { method: 'POST' });
-  const job = await fetch('/jobs/' + id).then(r => r.json());
-  jobs[id] = job;
-  renderDetailFresh = true; // job just transitioned, scroll to bottom
-  renderDetail(job);
+  // SSE job_status event will deliver the transition and scroll to bottom
 }
 
 async function rejectJob(id) {
   await fetch('/jobs/' + id + '/reject', { method: 'POST' });
-  const job = await fetch('/jobs/' + id).then(r => r.json());
-  jobs[id] = job;
-  renderDetailFresh = true; // job just transitioned, scroll to bottom
-  renderDetail(job);
+  // SSE job_status event will deliver the transition and scroll to bottom
 }
 
 async function requestChanges(id) {
@@ -615,7 +670,7 @@ async function requestChanges(id) {
       renderDetailFresh = true;
       renderDetail(refreshed);
     }
-    await poll();
+    // SSE will deliver subsequent log_entry and job_status events
   } finally {
     btn.disabled = false; btn.textContent = 'Request Changes';
   }
@@ -641,15 +696,14 @@ async function sendFollowUp(id) {
     (followupImages[id] || []).forEach(img => URL.revokeObjectURL(img.objectUrl));
     delete followupImages[id];
     selectedId = id;
-    // Unconditionally refresh the detail view so the user prompt appears immediately,
-    // even if the follow-up completes before the next poll() status-change check.
+    // Refresh the detail view immediately so the user prompt appears without waiting for SSE.
     const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(err => { console.warn('[sendFollowUp] failed to refresh job:', err); return null; });
     if (refreshed) {
       jobs[id] = refreshed;
       renderDetailFresh = true;
       renderDetail(refreshed);
     }
-    await poll();
+    // SSE will deliver subsequent log_entry and job_status events
   } finally {
     btn.disabled = false; btn.textContent = 'Send Follow-up';
   }
@@ -672,14 +726,16 @@ async function submitJob() {
   btn.disabled = true; btn.textContent = 'Submitting...';
   try {
     const res = await fetch('/jobs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    const job = await res.json();
+    const { id } = await res.json();
     document.getElementById('prompt').value = '';
     // clear file attachments
     pendingFiles.forEach(f => URL.revokeObjectURL(f.objectUrl));
     pendingFiles = [];
     renderFilePreviews();
-    selectedId = job.id;
-    await poll();
+    selectedId = id;
+    // Fetch and show the new job immediately; SSE will deliver all subsequent updates
+    const job = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
+    if (job) { jobs[id] = job; renderDetailFresh = true; renderDetail(job); }
   } finally {
     btn.disabled = false; btn.textContent = 'Run Agent';
   }
@@ -692,5 +748,4 @@ document.getElementById('prompt').addEventListener('paste', async (e) => {
   await handlePastedFiles(e, pendingFiles, renderFilePreviews);
 });
 
-poll();
-setInterval(poll, 2000);
+initSSE();

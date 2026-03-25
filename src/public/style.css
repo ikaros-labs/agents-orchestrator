@@ -61,7 +61,7 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .tool-approval-actions { display: flex; gap: 10px; }
 
 /* ── Question bar (AskUserQuestion) ─────────────────────────────────────── */
-.question-bar { display: flex; flex-direction: column; gap: 14px; padding: 14px 20px; border-top: 1px solid #2a2a2a; background: #070d14; flex-shrink: 0; }
+.question-bar { display: flex; flex-direction: column; gap: 14px; padding: 14px 20px 0; border-top: 1px solid #2a2a2a; background: #070d14; min-height: 150px; overflow-y: auto; }
 .question-bar-header { display: flex; align-items: center; gap: 10px; }
 .question-bar-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #0284c7; }
 .question-bar-title { font-size: 12px; color: #64748b; }
@@ -81,7 +81,7 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .question-option-other input[type="text"]:focus { border-bottom-color: #2563eb; }
 .question-option-other-label { font-size: 12px; color: #64748b; flex-shrink: 0; }
 .question-divider { border: none; border-top: 1px solid #1e293b; margin: 0; }
-.question-bar-actions { display: flex; }
+.question-bar-actions { display: flex; padding-bottom: 14px; }
 .btn-answer { background: #0369a1; color: #e0f2fe; border: none; border-radius: 6px; padding: 9px 22px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-answer:hover { background: #0284c7; }
 .btn-answer:disabled { background: #1e293b; color: #475569; cursor: default; }

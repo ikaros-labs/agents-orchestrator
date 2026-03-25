@@ -6,6 +6,39 @@ mkdirSync(DATA_DIR, { recursive: true });
 
 const jobs = new Map<string, Job>();
 
+// ── Event emitter ─────────────────────────────────────────────────────────────
+
+export type StoreEvent =
+  | { type: "job_created"; job: Job }
+  | { type: "job_status"; jobId: string; status: JobStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; sessionId: string | null; pendingTools: Job["pendingTools"] }
+  | { type: "log_entry"; jobId: string; entry: LogEntry; index: number };
+
+const subscribers = new Set<(e: StoreEvent) => void>();
+
+export function subscribe(fn: (e: StoreEvent) => void): () => void {
+  subscribers.add(fn);
+  return () => subscribers.delete(fn);
+}
+
+function emit(e: StoreEvent): void {
+  subscribers.forEach(fn => fn(e));
+}
+
+function emitJobStatus(job: Job): void {
+  emit({
+    type: "job_status",
+    jobId: job.id,
+    status: job.status,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    result: job.result,
+    error: job.error,
+    plan: job.plan,
+    sessionId: job.sessionId,
+    pendingTools: job.pendingTools,
+  });
+}
+
 function persistJob(job: Job): void {
   writeFileSync(`${DATA_DIR}/${job.id}.json`, JSON.stringify(job, null, 2));
 }
@@ -47,6 +80,7 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
   };
   jobs.set(id, job);
   persistJob(job);
+  emit({ type: "job_created", job });
   return job;
 }
 
@@ -61,6 +95,7 @@ export function setStatus(id: string, status: JobStatus): void {
   if (status === "running") job.startedAt = new Date().toISOString();
   if (status === "completed" || status === "failed") job.finishedAt = new Date().toISOString();
   persistJob(job);
+  emitJobStatus(job);
 }
 
 export function appendLog(id: string, entry: LogEntry): void {
@@ -68,6 +103,7 @@ export function appendLog(id: string, entry: LogEntry): void {
   if (!job) { console.warn(`[store] appendLog: job not found: ${id}`); return; }
   job.log.push(entry);
   persistJob(job);
+  emit({ type: "log_entry", jobId: id, entry, index: job.log.length - 1 });
 }
 
 export function setPlan(id: string, plan: string): void {
@@ -75,6 +111,7 @@ export function setPlan(id: string, plan: string): void {
   if (!job) { console.warn(`[store] setPlan: job not found: ${id}`); return; }
   job.plan = plan;
   persistJob(job);
+  emitJobStatus(job);
 }
 
 export function setSessionId(id: string, sessionId: string): void {
@@ -89,6 +126,7 @@ export function setResult(id: string, result: string): void {
   if (!job) { console.warn(`[store] setResult: job not found: ${id}`); return; }
   job.result = result;
   persistJob(job);
+  emitJobStatus(job);
 }
 
 export function setError(id: string, error: string): void {
@@ -96,6 +134,7 @@ export function setError(id: string, error: string): void {
   if (!job) { console.warn(`[store] setError: job not found: ${id}`); return; }
   job.error = error;
   persistJob(job);
+  emitJobStatus(job);
 }
 
 export function addPendingTool(id: string, toolUseID: string, name: string, input: Record<string, unknown>, agentID?: string): void {
@@ -103,6 +142,7 @@ export function addPendingTool(id: string, toolUseID: string, name: string, inpu
   if (!job) { console.warn(`[store] addPendingTool: job not found: ${id}`); return; }
   job.pendingTools.push({ toolUseID, name, input, agentID });
   persistJob(job);
+  emitJobStatus(job);
 }
 
 export function removePendingTool(id: string, toolUseID: string): void {
@@ -110,6 +150,7 @@ export function removePendingTool(id: string, toolUseID: string): void {
   if (!job) { console.warn(`[store] removePendingTool: job not found: ${id}`); return; }
   job.pendingTools = job.pendingTools.filter(t => t.toolUseID !== toolUseID);
   persistJob(job);
+  emitJobStatus(job);
 }
 
 export function clearResult(id: string): void {
@@ -118,6 +159,7 @@ export function clearResult(id: string): void {
   job.result = null;
   job.error = null;
   persistJob(job);
+  emitJobStatus(job);
 }
 
 function getLatestUserMessageTime(job: Job): number {

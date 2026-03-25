@@ -16,9 +16,9 @@ bun run dev
 Open **`http://localhost:3000/`** in your browser for a management UI that lets you:
 
 - Submit jobs and attach images
-- Monitor real-time job progress
+- Watch job progress in real-time — log entries stream in as the agent works via SSE (no polling)
 - Review the agent's plan before it makes any changes
-- Approve or reject plans
+- Approve or reject plans, approve or deny individual tool calls, answer clarifying questions
 - Send follow-up prompts on completed jobs
 
 ### API
@@ -53,6 +53,22 @@ curl -X POST http://localhost:3000/jobs \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Search for TODO comments.", "tools": ["Glob", "Grep"]}'
 ```
+
+---
+
+#### SSE event stream
+
+```bash
+curl -N http://localhost:3000/events
+```
+
+Returns a persistent `text/event-stream` response. The browser UI connects here automatically. Three named event types are emitted:
+
+| Event | Payload | When |
+|-------|---------|------|
+| `snapshot` | Array of all jobs | On every connect / reconnect |
+| `job_status` | `{ jobId, status, startedAt, finishedAt, result, error, plan, pendingTools }` | Any job metadata change |
+| `log_entry` | `{ jobId, entry, index }` | Each new log entry appended |
 
 ---
 
@@ -145,7 +161,8 @@ The follow-up accepts the same `images` field as job creation.
 
 ```
 pending → planning → awaiting_approval → running → completed
-                                                  ↘ failed
+                   ↕                   ↕        ↘ failed
+             awaiting_user_question  awaiting_tool_approval
 ```
 
 | Status | Description |
@@ -153,11 +170,13 @@ pending → planning → awaiting_approval → running → completed
 | `pending` | Job accepted, not yet started |
 | `planning` | Agent is drafting a plan (read-only) |
 | `awaiting_approval` | Plan ready — waiting for human approval or rejection |
-| `running` | Approved plan is being executed |
+| `awaiting_tool_approval` | Agent wants to invoke a tool — waiting for human approval |
+| `awaiting_user_question` | Agent asked a clarifying question — waiting for answers |
+| `running` | Plan is being executed |
 | `completed` | Job finished successfully |
 | `failed` | Job failed or plan was rejected |
 
-The two-phase model means the agent first produces a plan without making any changes, giving you a chance to review and approve before anything is modified.
+The two-phase model means the agent first produces a plan without making any changes, giving you a chance to review and approve before anything is modified. During execution, tool calls and clarifying questions can also be gated on human approval.
 
 ---
 
