@@ -26,9 +26,11 @@ Runtime and package manager: **bun**
 
 ```
 src/
-  server.ts        # HTTP server + agent runner (entry point)
-  store.ts         # in-memory job store
-  types.ts         # shared interfaces
+  server.ts        # HTTP server entry point — Bun routes, parseBody helper
+  jobs.ts          # agent runner — job functions, stream processing, tool approval
+  schemas.ts       # Zod request schemas (CreateJobSchema, FollowUpSchema, …)
+  store.ts         # in-memory job store with file-system persistence
+  types.ts         # shared TypeScript interfaces (Job, JobStatus, LogEntry, …)
   public/
     index.html     # management UI markup
     style.css      # management UI styles

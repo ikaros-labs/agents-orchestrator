@@ -1,0 +1,287 @@
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import * as store from "./store.ts";
+
+// ── Directory constants ──────────────────────────────────────────────────────
+
+export const LOGS_DIR = "./logs";
+export const IMAGES_DIR = "./data/images";
+await mkdir(LOGS_DIR, { recursive: true });
+await mkdir(IMAGES_DIR, { recursive: true });
+
+// ── Media type helpers ───────────────────────────────────────────────────────
+
+export const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+export const DOCUMENT_MEDIA_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "text/html",
+  "text/csv",
+  "text/xml",
+  "application/xml",
+]);
+export const ALLOWED_MEDIA_TYPES = new Set([...IMAGE_MEDIA_TYPES, ...DOCUMENT_MEDIA_TYPES]);
+
+export const MEDIA_TYPE_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "application/pdf": "pdf",
+  "text/plain": "txt",
+  "text/html": "html",
+  "text/csv": "csv",
+  "text/xml": "xml",
+  "application/xml": "xml",
+};
+
+export const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", "ExitPlanMode"];
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export interface RawImage { mediaType: string; data: string }
+
+// ── Tool approval map ────────────────────────────────────────────────────────
+// When Claude wants to use a tool during execution, canUseTool stores a
+// Promise resolver here keyed by job ID, then by toolUseID. This supports
+// parallel tool calls (e.g. from subagents) where multiple approvals can be
+// in-flight simultaneously. The approve/reject endpoints resolve each by
+// toolUseID, unblocking the specific agent call that was waiting.
+
+const pendingToolApprovals = new Map<string, Map<string, { resolve: (d: PermissionResult) => void }>>();
+
+/** Returns true if a pending resolver exists for this job + toolUseID. */
+export function hasPendingApproval(id: string, toolUseID: string): boolean {
+  return pendingToolApprovals.get(id)?.has(toolUseID) ?? false;
+}
+
+/**
+ * Resolves (and removes) a pending tool approval. Returns false if no resolver
+ * was found, true on success.
+ */
+export function resolveToolApproval(id: string, toolUseID: string, result: PermissionResult): boolean {
+  const jobApprovals = pendingToolApprovals.get(id);
+  const pending = jobApprovals?.get(toolUseID);
+  if (!pending) return false;
+  jobApprovals!.delete(toolUseID);
+  if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
+  pending.resolve(result);
+  return true;
+}
+
+// ── Internal helpers ─────────────────────────────────────────────────────────
+
+function makeCanUseTool(id: string): CanUseTool {
+  return async (toolName: string, input: Record<string, unknown>, options): Promise<PermissionResult> => {
+    const { toolUseID, agentID } = options;
+
+    // Deny ExitPlanMode so the planning query ends cleanly here.
+    // Execution is triggered separately via executeJob() once the user approves the plan.
+    if (toolName === "ExitPlanMode") {
+      return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
+    }
+
+    store.addPendingTool(id, toolUseID, toolName, input, agentID);
+    console.log(`[canUseTool] id=${id} tool=${toolName} toolUseID=${toolUseID} → awaiting approval`);
+
+    const job = store.getJob(id);
+    if (job && job.status !== "awaiting_tool_approval" && job.status !== "awaiting_user_question") {
+      store.setStatus(id, toolName === "AskUserQuestion" ? "awaiting_user_question" : "awaiting_tool_approval");
+    }
+
+    if (!pendingToolApprovals.has(id)) {
+      pendingToolApprovals.set(id, new Map());
+    }
+    return new Promise<PermissionResult>((resolve) => {
+      pendingToolApprovals.get(id)!.set(toolUseID, { resolve });
+    });
+  };
+}
+
+/** Handles the SDK's inconsistent session_id vs sessionId casing. */
+function extractSessionId(message: any): string | undefined {
+  return message.session_id ?? message.sessionId;
+}
+
+function handleJobError(id: string, err: unknown): void {
+  store.setError(id, err instanceof Error ? err.message : String(err));
+  store.setStatus(id, "failed");
+}
+
+/** Save base64 image data to disk and return the server-relative URL. */
+async function saveImage(jobId: string, index: number, mediaType: string, base64Data: string): Promise<string> {
+  const ext = MEDIA_TYPE_EXT[mediaType] ?? "bin";
+  const dir = `${IMAGES_DIR}/${jobId}`;
+  await mkdir(dir, { recursive: true });
+  const filename = `${index}.${ext}`;
+  await writeFile(`${dir}/${filename}`, Buffer.from(base64Data, "base64"));
+  return `/images/${jobId}/${filename}`;
+}
+
+/**
+ * Drives the `for await` loop over a query stream, handling NDJSON logging,
+ * content block processing, and sessionId capture in one place.
+ * - `collectPlanText`: if true, text blocks are accumulated and returned (used by plan/revise jobs)
+ * - `captureResult`: if true, store.setResult is called on result messages (used by execute jobs)
+ */
+async function runQueryStream(
+  id: string,
+  stream: AsyncIterable<any>,
+  imageCounter: number,
+  opts: { collectPlanText?: boolean; captureResult?: boolean } = {}
+): Promise<string[]> {
+  const planTexts: string[] = [];
+  for await (const message of stream) {
+    const ts = new Date().toISOString();
+    await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
+    if (message.type === "assistant" && message.message?.content) {
+      for (const block of message.message.content) {
+        if ("text" in block) {
+          store.appendLog(id, { type: "text", text: block.text, ts });
+          if (opts.collectPlanText) planTexts.push(block.text);
+        } else if ("name" in block) {
+          store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+        } else if ((block as any).type === "image") {
+          const b = block as any;
+          if (b.source?.type === "base64") {
+            const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
+            store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+          }
+        }
+      }
+    } else if (message.type === "result") {
+      const sessionId = extractSessionId(message);
+      if (sessionId) store.setSessionId(id, sessionId);
+      if (opts.captureResult) store.setResult(id, message.subtype);
+    }
+  }
+  return planTexts;
+}
+
+/** Build a multimodal prompt iterable when files are provided; otherwise fall back to a plain string. */
+async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string): AsyncIterable<any> {
+  // Save files to disk and build content blocks (image or document depending on type)
+  const contentBlocks = await Promise.all(
+    rawImages.map(async (img, i) => {
+      await saveImage(jobId, i, img.mediaType, img.data);
+      if (IMAGE_MEDIA_TYPES.has(img.mediaType)) {
+        return {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: img.mediaType as any,
+            data: img.data,
+          },
+        };
+      } else {
+        return {
+          type: "document" as const,
+          source: {
+            type: "base64" as const,
+            media_type: img.mediaType as any,
+            data: img.data,
+          },
+        };
+      }
+    })
+  );
+  yield {
+    type: "user" as const,
+    message: {
+      role: "user" as const,
+      content: [
+        ...contentBlocks,
+        { type: "text" as const, text: prompt },
+      ],
+    },
+    parent_tool_use_id: null,
+  };
+}
+
+// ── Job runners (exported) ───────────────────────────────────────────────────
+
+export async function planJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+  console.log(`[planJob] id=${id}`);
+  store.setStatus(id, "planning");
+  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
+  try {
+    const stream = query({
+      prompt: promptArg as any,
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...(cwd ? { cwd } : {}) },
+    });
+    const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
+    store.setPlan(id, planTexts.join("\n"));
+    store.setStatus(id, "awaiting_approval");
+  } catch (err) {
+    handleJobError(id, err);
+  }
+}
+
+export async function revisePlanJob(id: string, feedback: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
+  console.log(`[revisePlanJob] id=${id}`);
+  store.setStatus(id, "planning");
+  store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
+  try {
+    const stream = query({
+      prompt: feedback,
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+    });
+    const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
+    store.setPlan(id, planTexts.join("\n"));
+    store.setStatus(id, "awaiting_approval");
+  } catch (err) {
+    handleJobError(id, err);
+  }
+}
+
+export async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+  console.log(`[directExecuteJob] id=${id}`);
+  store.setStatus(id, "running");
+  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
+  try {
+    const stream = query({
+      prompt: promptArg as any,
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), ...(cwd ? { cwd } : {}) },
+    });
+    await runQueryStream(id, stream, rawImages.length, { captureResult: true });
+    store.setStatus(id, "completed");
+  } catch (err) {
+    handleJobError(id, err);
+  }
+}
+
+export async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
+  console.log(`[executeJob] id=${id}`);
+  store.setStatus(id, "running");
+  try {
+    const stream = query({
+      prompt: "The plan has been approved. Please proceed with execution.",
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+    });
+    await runQueryStream(id, stream, 0, { captureResult: true });
+    store.setStatus(id, "completed");
+  } catch (err) {
+    handleJobError(id, err);
+  }
+}
+
+export async function followUpJob(id: string, prompt: string, sessionId: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+  console.log(`[followUpJob] id=${id}`);
+  store.setStatus(id, "running");
+  store.clearResult(id);
+  store.appendLog(id, { type: "user", text: prompt, ts: new Date().toISOString() });
+  const promptArg = rawImages.length > 0
+    ? makePrompt(prompt, rawImages, `${id}-followup-${Date.now()}`)
+    : prompt;
+  try {
+    const stream = query({
+      prompt: promptArg as any,
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+    });
+    await runQueryStream(id, stream, 0, { captureResult: true });
+    store.setStatus(id, "completed");
+  } catch (err) {
+    handleJobError(id, err);
+  }
+}

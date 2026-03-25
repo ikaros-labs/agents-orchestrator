@@ -1,528 +1,216 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { z } from "zod";
 import * as store from "./store.ts";
-import type { InputFile, JobMode } from "./types.ts";
+import * as jobs from "./jobs.ts";
+import { CreateJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
+import type { JobMode } from "./types.ts";
 
-const LOGS_DIR = "./logs";
-const IMAGES_DIR = "./data/images";
-await mkdir(LOGS_DIR, { recursive: true });
-await mkdir(IMAGES_DIR, { recursive: true });
 store.loadStore();
 
 const UI_HTML = await Bun.file(new URL("./public/index.html", import.meta.url)).text();
 
-// ── canUseTool resolver map ──────────────────────────────────────────────────
-// When Claude wants to use a tool during execution, canUseTool stores a
-// Promise resolver here keyed by job ID, then by toolUseID. This supports
-// parallel tool calls (e.g. from subagents) where multiple approvals can be
-// in-flight simultaneously. The approve/reject endpoints resolve each by
-// toolUseID, unblocking the specific agent call that was waiting.
-const pendingToolApprovals = new Map<string, Map<string, { resolve: (d: PermissionResult) => void }>>();
-
-function makeCanUseTool(id: string): CanUseTool {
-  return async (toolName: string, input: Record<string, unknown>, options): Promise<PermissionResult> => {
-    const { toolUseID, agentID } = options;
-
-    // Deny ExitPlanMode so the planning query ends cleanly here.
-    // Execution is triggered separately via executeJob() once the user approves the plan.
-    if (toolName === "ExitPlanMode") {
-      return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
-    }
-
-    store.addPendingTool(id, toolUseID, toolName, input, agentID);
-    console.log(`[canUseTool] id=${id} tool=${toolName} toolUseID=${toolUseID} → awaiting approval`);
-
-    const job = store.getJob(id);
-    if (job && job.status !== "awaiting_tool_approval" && job.status !== "awaiting_user_question") {
-      store.setStatus(id, toolName === "AskUserQuestion" ? "awaiting_user_question" : "awaiting_tool_approval");
-    }
-
-    if (!pendingToolApprovals.has(id)) {
-      pendingToolApprovals.set(id, new Map());
-    }
-    return new Promise<PermissionResult>((resolve) => {
-      pendingToolApprovals.get(id)!.set(toolUseID, { resolve });
-    });
-  };
-}
-
-/** Handles the SDK's inconsistent session_id vs sessionId casing. */
-function extractSessionId(message: any): string | undefined {
-  return message.session_id ?? message.sessionId;
-}
-
-function handleJobError(id: string, err: unknown): void {
-  store.setError(id, err instanceof Error ? err.message : String(err));
-  store.setStatus(id, "failed");
-}
-
-/**
- * Drives the `for await` loop over a query stream, handling NDJSON logging,
- * content block processing, and sessionId capture in one place.
- * - `collectPlanText`: if true, text blocks are accumulated and returned (used by plan/revise jobs)
- * - `captureResult`: if true, store.setResult is called on result messages (used by execute jobs)
- */
-async function runQueryStream(
-  id: string,
-  stream: AsyncIterable<any>,
-  imageCounter: number,
-  opts: { collectPlanText?: boolean; captureResult?: boolean } = {}
-): Promise<string[]> {
-  const planTexts: string[] = [];
-  for await (const message of stream) {
-    const ts = new Date().toISOString();
-    await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
-    if (message.type === "assistant" && message.message?.content) {
-      for (const block of message.message.content) {
-        if ("text" in block) {
-          store.appendLog(id, { type: "text", text: block.text, ts });
-          if (opts.collectPlanText) planTexts.push(block.text);
-        } else if ("name" in block) {
-          store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
-        } else if ((block as any).type === "image") {
-          const b = block as any;
-          if (b.source?.type === "base64") {
-            const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
-            store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
-          }
-        }
-      }
-    } else if (message.type === "result") {
-      const sessionId = extractSessionId(message);
-      if (sessionId) store.setSessionId(id, sessionId);
-      if (opts.captureResult) store.setResult(id, message.subtype);
-    }
-  }
-  return planTexts;
-}
-
-const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", "ExitPlanMode"];
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "localhost";
 
-const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-const DOCUMENT_MEDIA_TYPES = new Set([
-  "application/pdf",
-  "text/plain",
-  "text/html",
-  "text/csv",
-  "text/xml",
-  "application/xml",
-]);
-const ALLOWED_MEDIA_TYPES = new Set([...IMAGE_MEDIA_TYPES, ...DOCUMENT_MEDIA_TYPES]);
-
-const MEDIA_TYPE_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/gif": "gif",
-  "image/webp": "webp",
-  "application/pdf": "pdf",
-  "text/plain": "txt",
-  "text/html": "html",
-  "text/csv": "csv",
-  "text/xml": "xml",
-  "application/xml": "xml",
-};
-
-/** Save base64 image data to disk and return the server-relative URL. */
-async function saveImage(jobId: string, index: number, mediaType: string, base64Data: string): Promise<string> {
-  const ext = MEDIA_TYPE_EXT[mediaType] ?? "bin";
-  const dir = `${IMAGES_DIR}/${jobId}`;
-  await mkdir(dir, { recursive: true });
-  const filename = `${index}.${ext}`;
-  await writeFile(`${dir}/${filename}`, Buffer.from(base64Data, "base64"));
-  return `/images/${jobId}/${filename}`;
-}
-
-interface RawImage { mediaType: string; data: string }
-
-/** Build a multimodal prompt iterable when files are provided; otherwise fall back to a plain string. */
-async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string): AsyncIterable<any> {
-  // Save files to disk and build content blocks (image or document depending on type)
-  const contentBlocks = await Promise.all(
-    rawImages.map(async (img, i) => {
-      await saveImage(jobId, i, img.mediaType, img.data);
-      if (IMAGE_MEDIA_TYPES.has(img.mediaType)) {
-        return {
-          type: "image" as const,
-          source: {
-            type: "base64" as const,
-            media_type: img.mediaType as any,
-            data: img.data,
-          },
-        };
-      } else {
-        return {
-          type: "document" as const,
-          source: {
-            type: "base64" as const,
-            media_type: img.mediaType as any,
-            data: img.data,
-          },
-        };
-      }
-    })
-  );
-  yield {
-    type: "user" as const,
-    message: {
-      role: "user" as const,
-      content: [
-        ...contentBlocks,
-        { type: "text" as const, text: prompt },
-      ],
-    },
-    parent_tool_use_id: null,
-  };
-}
-
-async function planJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
-  console.log(`[planJob] id=${id}`);
-  store.setStatus(id, "planning");
-  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  try {
-    const stream = query({
-      prompt: promptArg as any,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...(cwd ? { cwd } : {}) },
-    });
-    const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
-    store.setPlan(id, planTexts.join("\n"));
-    store.setStatus(id, "awaiting_approval");
-  } catch (err) {
-    handleJobError(id, err);
-  }
-}
-
-async function revisePlanJob(id: string, feedback: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
-  console.log(`[revisePlanJob] id=${id}`);
-  store.setStatus(id, "planning");
-  store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
-  try {
-    const stream = query({
-      prompt: feedback,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
-    });
-    const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
-    store.setPlan(id, planTexts.join("\n"));
-    store.setStatus(id, "awaiting_approval");
-  } catch (err) {
-    handleJobError(id, err);
-  }
-}
-
-async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
-  console.log(`[directExecuteJob] id=${id}`);
-  store.setStatus(id, "running");
-  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  try {
-    const stream = query({
-      prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), ...(cwd ? { cwd } : {}) },
-    });
-    await runQueryStream(id, stream, rawImages.length, { captureResult: true });
-    store.setStatus(id, "completed");
-  } catch (err) {
-    handleJobError(id, err);
-  }
-}
-
-async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
-  console.log(`[executeJob] id=${id}`);
-  store.setStatus(id, "running");
-  try {
-    const stream = query({
-      prompt: "The plan has been approved. Please proceed with execution.",
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
-    });
-    await runQueryStream(id, stream, 0, { captureResult: true });
-    store.setStatus(id, "completed");
-  } catch (err) {
-    handleJobError(id, err);
-  }
-}
-
-async function followUpJob(id: string, prompt: string, sessionId: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
-  console.log(`[followUpJob] id=${id}`);
-  store.setStatus(id, "running");
-  store.clearResult(id);
-  store.appendLog(id, { type: "user", text: prompt, ts: new Date().toISOString() });
-  const promptArg = rawImages.length > 0
-    ? makePrompt(prompt, rawImages, `${id}-followup-${Date.now()}`)
-    : prompt;
-  try {
-    const stream = query({
-      prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
-    });
-    await runQueryStream(id, stream, 0, { captureResult: true });
-    store.setStatus(id, "completed");
-  } catch (err) {
-    handleJobError(id, err);
-  }
-}
-
-function json(status: number, data: unknown): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+// ── Response helpers ─────────────────────────────────────────────────────────
 
 function jsonError(status: number, message: string): Response {
-  return json(status, { error: message });
+  return Response.json({ error: message }, { status });
 }
 
-/** Validate a raw images array from a request body. Returns an error string or null. */
-function validateImages(raw: unknown): string | null {
-  if (!Array.isArray(raw)) return "images must be an array";
-  for (let i = 0; i < raw.length; i++) {
-    const img = raw[i];
-    if (typeof img !== "object" || img === null) return `images[${i}] must be an object`;
-    const { mediaType, data } = img as Record<string, unknown>;
-    if (typeof mediaType !== "string" || !ALLOWED_MEDIA_TYPES.has(mediaType)) {
-      return `images[${i}].mediaType must be one of: ${[...ALLOWED_MEDIA_TYPES].join(", ")}`;
-    }
-    if (typeof data !== "string" || data.trim() === "") {
-      return `images[${i}].data must be a non-empty base64 string`;
-    }
+/**
+ * Parses and validates a request body against a Zod schema.
+ * Returns `{ data }` on success or an error Response on failure.
+ */
+async function parseBody<S extends z.ZodTypeAny>(req: Request, schema: S): Promise<{ data: z.output<S> } | Response> {
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return jsonError(400, "Invalid JSON body");
   }
-  return null;
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    return jsonError(400, result.error.issues[0]?.message ?? "Invalid request body");
+  }
+  return { data: result.data };
 }
+
+// ── EXT → Content-Type map (for image serving) ───────────────────────────────
+
+const EXT_CONTENT_TYPE: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg",
+  png: "image/png", gif: "image/gif", webp: "image/webp",
+  pdf: "application/pdf",
+  txt: "text/plain", html: "text/html", csv: "text/csv", xml: "text/xml",
+};
+
+// ── Server ───────────────────────────────────────────────────────────────────
 
 Bun.serve({
   port: PORT,
   hostname: HOST,
-  async fetch(req) {
-    const url = new URL(req.url);
-    const path = url.pathname;
 
-    if (req.method === "GET" && path === "/") {
-      return new Response(UI_HTML, { headers: { "Content-Type": "text/html" } });
-    }
+  routes: {
+    // ── Static assets ──────────────────────────────────────────────────────
 
-    if (req.method === "GET" && path === "/style.css") {
-      return new Response(Bun.file(new URL("./public/style.css", import.meta.url)), {
+    "/": () => new Response(UI_HTML, { headers: { "Content-Type": "text/html" } }),
+
+    "/style.css": () =>
+      new Response(Bun.file(new URL("./public/style.css", import.meta.url)), {
         headers: { "Content-Type": "text/css" },
-      });
-    }
+      }),
 
-    if (req.method === "GET" && path === "/app.js") {
-      return new Response(Bun.file(new URL("./public/app.js", import.meta.url)), {
+    "/app.js": () =>
+      new Response(Bun.file(new URL("./public/app.js", import.meta.url)), {
         headers: { "Content-Type": "text/javascript" },
-      });
-    }
+      }),
 
-    // Serve saved images
-    const imageMatch = path.match(/^\/images\/([^/]+)\/([^/]+)$/);
-    if (req.method === "GET" && imageMatch) {
-      const [, jobId, filename] = imageMatch;
+    // ── Saved images / documents ───────────────────────────────────────────
+
+    "/images/:jobId/:filename": async (req) => {
+      const { jobId, filename } = req.params;
       // Sanitize: no path traversal
-      if (!/^[\w.-]+$/.test(jobId!) || !/^[\w.-]+$/.test(filename!)) {
+      if (!/^[\w.-]+$/.test(jobId) || !/^[\w.-]+$/.test(filename)) {
         return jsonError(400, "Invalid image path");
       }
-      const filePath = `${IMAGES_DIR}/${jobId}/${filename}`;
-      const file = Bun.file(filePath);
+      const file = Bun.file(`${jobs.IMAGES_DIR}/${jobId}/${filename}`);
       if (!(await file.exists())) return jsonError(404, "Image not found");
-      const ext = filename!.split(".").pop()?.toLowerCase();
-      const EXT_CONTENT_TYPE: Record<string, string> = {
-        jpg: "image/jpeg", jpeg: "image/jpeg",
-        png: "image/png", gif: "image/gif", webp: "image/webp",
-        pdf: "application/pdf",
-        txt: "text/plain", html: "text/html", csv: "text/csv", xml: "text/xml",
-      };
-      const contentType = EXT_CONTENT_TYPE[ext ?? ""] ?? "application/octet-stream";
-      return new Response(file, { headers: { "Content-Type": contentType } });
-    }
+      const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+      return new Response(file, {
+        headers: { "Content-Type": EXT_CONTENT_TYPE[ext] ?? "application/octet-stream" },
+      });
+    },
 
-    if (req.method === "GET" && path === "/jobs") {
-      return json(200, store.listJobs());
-    }
+    // ── Jobs ───────────────────────────────────────────────────────────────
 
-    if (req.method === "POST" && path === "/jobs") {
-      let body: unknown;
-      try {
-        body = await req.json();
-      } catch {
-        return jsonError(400, "Invalid JSON body");
+    "/jobs": async (req) => {
+      if (req.method === "GET") {
+        return Response.json(store.listJobs());
       }
 
-      if (typeof body !== "object" || body === null) {
-        return jsonError(400, "Body must be a JSON object");
-      }
-      const b = body as Record<string, unknown>;
-      if (typeof b["prompt"] !== "string" || b["prompt"].trim() === "") {
-        return jsonError(400, "prompt must be a non-empty string");
-      }
-      const prompt = b["prompt"].trim();
-      let tools = DEFAULT_TOOLS;
-      if ("tools" in b) {
-        if (!Array.isArray(b["tools"]) || !b["tools"].every((t) => typeof t === "string")) {
-          return jsonError(400, "tools must be an array of strings");
+      if (req.method === "POST") {
+        const parsed = await parseBody(req, CreateJobSchema);
+        if (parsed instanceof Response) return parsed;
+        const { prompt, tools: rawTools, cwd = null, images: rawImages, mode } = parsed.data;
+
+        const tools = rawTools ?? jobs.DEFAULT_TOOLS;
+        const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
+
+        // Build InputFile refs (filenames will be <index>.<ext>)
+        const inputImageRefs = rawImages.map((img, i) => ({
+          mediaType: img.mediaType,
+          filename: `${i}.${jobs.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
+        }));
+
+        store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode);
+        if (mode === "edit") {
+          Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages));
+        } else {
+          // "auto" and "plan" both use the planning flow
+          Promise.resolve().then(() => jobs.planJob(id, prompt, tools, cwd, rawImages));
         }
-        tools = b["tools"] as string[];
+
+        return Response.json({ id, status: "pending" }, { status: 202 });
       }
 
-      let cwd: string | null = null;
-      if ("cwd" in b) {
-        if (typeof b["cwd"] !== "string") {
-          return jsonError(400, "cwd must be a string");
-        }
-        cwd = b["cwd"];
-      }
+      return new Response("Method Not Allowed", { status: 405 });
+    },
 
-      let rawImages: RawImage[] = [];
-      if ("images" in b) {
-        const err = validateImages(b["images"]);
-        if (err) return jsonError(400, err);
-        rawImages = b["images"] as RawImage[];
-      }
+    // ── Single job ─────────────────────────────────────────────────────────
 
-      let mode: JobMode = "auto";
-      if ("mode" in b) {
-        if (b["mode"] !== "auto" && b["mode"] !== "plan" && b["mode"] !== "edit") {
-          return jsonError(400, 'mode must be one of: "auto", "plan", "edit"');
-        }
-        mode = b["mode"] as JobMode;
-      }
-
-      const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
-
-      // Build InputFile refs (filenames will be <index>.<ext>)
-      const inputImageRefs: InputFile[] = rawImages.map((img, i) => ({
-        mediaType: img.mediaType,
-        filename: `${i}.${MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
-      }));
-
-      store.createJob(id, prompt, tools, cwd, inputImageRefs, mode);
-      if (mode === "edit") {
-        Promise.resolve().then(() => directExecuteJob(id, prompt, tools, cwd, rawImages));
-      } else {
-        // "auto" and "plan" both use the planning flow for now
-        Promise.resolve().then(() => planJob(id, prompt, tools, cwd, rawImages));
-      }
-
-      return json(202, { id, status: "pending" });
-    }
-
-    const jobMatch = path.match(/^\/jobs\/([^/]+)$/);
-    if (req.method === "GET" && jobMatch) {
-      const id = jobMatch[1]!;
+    "/jobs/:id": (req) => {
+      const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
-      return json(200, job);
-    }
+      return Response.json(job);
+    },
 
-    const approveMatch = path.match(/^\/jobs\/([^/]+)\/approve$/);
-    if (req.method === "POST" && approveMatch) {
-      const id = approveMatch[1]!;
+    // ── Plan approval lifecycle ────────────────────────────────────────────
+
+    "/jobs/:id/approve": (req) => {
+      const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
       if (!job.sessionId) return jsonError(500, "No session ID from planning phase");
-      Promise.resolve().then(() => executeJob(id, job.sessionId!, job.tools, job.cwd));
-      return json(202, { id, status: "running" });
-    }
+      Promise.resolve().then(() => jobs.executeJob(id, job.sessionId!, job.tools, job.cwd));
+      return Response.json({ id, status: "running" }, { status: 202 });
+    },
 
-    const rejectMatch = path.match(/^\/jobs\/([^/]+)\/reject$/);
-    if (req.method === "POST" && rejectMatch) {
-      const id = rejectMatch[1]!;
+    "/jobs/:id/reject": (req) => {
+      const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
       store.setError(id, "Rejected by user");
       store.setStatus(id, "failed");
-      return json(200, { id, status: "failed" });
-    }
+      return Response.json({ id, status: "failed" });
+    },
 
-    const reviseMatch = path.match(/^\/jobs\/([^/]+)\/revise$/);
-    if (req.method === "POST" && reviseMatch) {
-      const id = reviseMatch[1]!;
+    "/jobs/:id/revise": async (req) => {
+      const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
       if (!job.sessionId) return jsonError(500, "No session ID available for revision");
-      let body: unknown;
-      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
-      const b = body as Record<string, unknown>;
-      if (typeof b["prompt"] !== "string" || b["prompt"].trim() === "") {
-        return jsonError(400, "prompt must be a non-empty string");
-      }
-      Promise.resolve().then(() => revisePlanJob(id, (b["prompt"] as string).trim(), job.sessionId!, job.tools, job.cwd));
-      return json(202, { id, status: "planning" });
-    }
+      const parsed = await parseBody(req, ReviseSchema);
+      if (parsed instanceof Response) return parsed;
+      Promise.resolve().then(() => jobs.revisePlanJob(id, parsed.data.prompt, job.sessionId!, job.tools, job.cwd));
+      return Response.json({ id, status: "planning" }, { status: 202 });
+    },
 
-    const approveToolMatch = path.match(/^\/jobs\/([^/]+)\/approve-tool$/);
-    if (req.method === "POST" && approveToolMatch) {
-      const id = approveToolMatch[1]!;
+    // ── Tool approval ──────────────────────────────────────────────────────
+
+    "/jobs/:id/approve-tool": async (req) => {
+      const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
-      let body: unknown;
-      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
-      const b = body as Record<string, unknown>;
-      const toolUseID = typeof b["toolUseID"] === "string" ? b["toolUseID"] : null;
-      if (!toolUseID) return jsonError(400, "toolUseID is required");
-      const jobApprovals = pendingToolApprovals.get(id);
-      const pending = jobApprovals?.get(toolUseID);
-      if (!pending) return jsonError(404, "No pending tool approval found for that toolUseID");
+      const parsed = await parseBody(req, ToolActionSchema);
+      if (parsed instanceof Response) return parsed;
+      const { toolUseID } = parsed.data;
+      if (!jobs.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
       const pendingTool = job.pendingTools.find(t => t.toolUseID === toolUseID);
       const approvedInput = pendingTool?.input ?? {};
       console.log(`[approve-tool] id=${id} tool=${pendingTool?.name} toolUseID=${toolUseID} → granted`);
       store.removePendingTool(id, toolUseID);
-      jobApprovals!.delete(toolUseID);
-      if (job.pendingTools.length === 0) {
-        store.setStatus(id, "running");
-        if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
-      }
-      pending.resolve({ behavior: "allow", updatedInput: approvedInput });
-      return json(202, { id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
-    }
+      if (job.pendingTools.length === 0) store.setStatus(id, "running");
+      jobs.resolveToolApproval(id, toolUseID, { behavior: "allow", updatedInput: approvedInput });
+      return Response.json({ id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" }, { status: 202 });
+    },
 
-    const rejectToolMatch = path.match(/^\/jobs\/([^/]+)\/reject-tool$/);
-    if (req.method === "POST" && rejectToolMatch) {
-      const id = rejectToolMatch[1]!;
+    "/jobs/:id/reject-tool": async (req) => {
+      const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
-      let body: unknown;
-      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
-      const b = body as Record<string, unknown>;
-      const toolUseID = typeof b["toolUseID"] === "string" ? b["toolUseID"] : null;
-      if (!toolUseID) return jsonError(400, "toolUseID is required");
-      const jobApprovals = pendingToolApprovals.get(id);
-      const pending = jobApprovals?.get(toolUseID);
-      if (!pending) return jsonError(404, "No pending tool approval found for that toolUseID");
+      const parsed = await parseBody(req, ToolActionSchema);
+      if (parsed instanceof Response) return parsed;
+      const { toolUseID } = parsed.data;
+      if (!jobs.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
+      const pendingTool = job.pendingTools.find(t => t.toolUseID === toolUseID);
+      console.log(`[reject-tool] id=${id} tool=${pendingTool?.name} toolUseID=${toolUseID} → denied`);
       store.removePendingTool(id, toolUseID);
-      jobApprovals!.delete(toolUseID);
-      if (job.pendingTools.length === 0) {
-        store.setStatus(id, "running");
-        if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
-      }
-      pending.resolve({ behavior: "deny", message: "User denied this tool call" });
-      return json(200, { id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
-    }
+      if (job.pendingTools.length === 0) store.setStatus(id, "running");
+      jobs.resolveToolApproval(id, toolUseID, { behavior: "deny", message: "User denied this tool call" });
+      return Response.json({ id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
+    },
 
-    const answerQuestionMatch = path.match(/^\/jobs\/([^/]+)\/answer-question$/);
-    if (req.method === "POST" && answerQuestionMatch) {
-      const id = answerQuestionMatch[1]!;
+    // ── AskUserQuestion ────────────────────────────────────────────────────
+
+    "/jobs/:id/answer-question": async (req) => {
+      const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_user_question") return jsonError(409, "Job is not awaiting a user question");
       const askToolEntry = job.pendingTools.find(t => t.name === "AskUserQuestion");
       if (!askToolEntry) return jsonError(500, "No AskUserQuestion tool found in pending tools");
-      const jobApprovals = pendingToolApprovals.get(id);
-      const pending = jobApprovals?.get(askToolEntry.toolUseID);
-      if (!pending) return jsonError(500, "No pending question resolver found");
-      let body: unknown;
-      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
-      const b = body as Record<string, unknown>;
-      if (typeof b["answers"] !== "object" || b["answers"] === null || Array.isArray(b["answers"])) {
-        return jsonError(400, "answers must be a plain object");
-      }
+      if (!jobs.hasPendingApproval(id, askToolEntry.toolUseID)) return jsonError(500, "No pending question resolver found");
+      const parsed = await parseBody(req, AnswerQuestionSchema);
+      if (parsed instanceof Response) return parsed;
+      const { answers } = parsed.data;
       const questions = ((askToolEntry.input as any)?.questions) ?? [];
-      const answers = b["answers"] as Record<string, string>;
       // Log answers to the job feed so they're visible in the conversation
       const ts = new Date().toISOString();
       const answerText = (questions as any[]).map((q: any) => {
@@ -531,39 +219,29 @@ Bun.serve({
       }).join("\n\n");
       if (answerText) store.appendLog(id, { type: "user", text: answerText, ts });
       store.removePendingTool(id, askToolEntry.toolUseID);
-      jobApprovals!.delete(askToolEntry.toolUseID);
-      if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
       // Return to "planning" if we haven't produced a plan yet, otherwise "running"
       store.setStatus(id, job.plan === null ? "planning" : "running");
-      pending.resolve({ behavior: "allow", updatedInput: { questions, answers } });
-      return json(202, { id, status: "running" });
-    }
+      jobs.resolveToolApproval(id, askToolEntry.toolUseID, { behavior: "allow", updatedInput: { questions, answers } });
+      return Response.json({ id, status: "running" }, { status: 202 });
+    },
 
-    const followupMatch = path.match(/^\/jobs\/([^/]+)\/followup$/);
-    if (req.method === "POST" && followupMatch) {
-      const id = followupMatch[1]!;
+    // ── Follow-up ──────────────────────────────────────────────────────────
+
+    "/jobs/:id/followup": async (req) => {
+      const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "completed" && job.status !== "failed") return jsonError(409, "Job is not completed");
       if (!job.sessionId) return jsonError(500, "No session ID available for follow-up");
-      let body: unknown;
-      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
-      const b = body as Record<string, unknown>;
-      if (typeof b["prompt"] !== "string" || b["prompt"].trim() === "") {
-        return jsonError(400, "prompt must be a non-empty string");
-      }
+      const parsed = await parseBody(req, FollowUpSchema);
+      if (parsed instanceof Response) return parsed;
+      const { prompt, images: rawImages } = parsed.data;
+      Promise.resolve().then(() => jobs.followUpJob(id, prompt, job.sessionId!, job.tools, job.cwd, rawImages));
+      return Response.json({ id, status: "running" }, { status: 202 });
+    },
+  },
 
-      let rawImages: RawImage[] = [];
-      if ("images" in b) {
-        const err = validateImages(b["images"]);
-        if (err) return jsonError(400, err);
-        rawImages = b["images"] as RawImage[];
-      }
-
-      Promise.resolve().then(() => followUpJob(id, (b["prompt"] as string).trim(), job.sessionId!, job.tools, job.cwd, rawImages));
-      return json(202, { id, status: "running" });
-    }
-
+  fetch() {
     return jsonError(404, "Not found");
   },
 });
