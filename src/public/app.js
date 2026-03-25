@@ -88,6 +88,39 @@ function setMode(mode) {
   });
 }
 
+function onCwdSelectChange() {
+  const sel = document.getElementById('cwd-select');
+  const inp = document.getElementById('cwd-custom');
+  const isNew = sel.value === '__new__';
+  inp.style.display = isNew ? '' : 'none';
+  if (isNew) inp.focus();
+}
+
+function updateCwdSelect(list) {
+  const sel = document.getElementById('cwd-select');
+  const seen = new Set();
+  const dirs = [];
+  for (const j of list) {
+    if (j.cwd && !seen.has(j.cwd)) { seen.add(j.cwd); dirs.push(j.cwd); }
+  }
+  const current = sel.value;
+  Array.from(sel.options).forEach(o => {
+    if (o.value !== '' && o.value !== '__new__') o.remove();
+  });
+  const addNewOpt = sel.querySelector('option[value="__new__"]');
+  dirs.forEach(dir => {
+    const opt = document.createElement('option');
+    opt.value = dir;
+    opt.textContent = dir;
+    sel.insertBefore(opt, addNewOpt);
+  });
+  if (current && Array.from(sel.options).some(o => o.value === current)) {
+    sel.value = current; // restore previous selection
+  } else if (!current && dirs.length) {
+    sel.value = dirs[0]; // default to most recent on first load
+  }
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -366,6 +399,7 @@ async function poll() {
   const prevSelectedStatus = selectedId && jobs[selectedId] ? jobs[selectedId].status : null;
   list.forEach(j => { if (!jobs[j.id] || jobs[j.id].status !== j.status) jobs[j.id] = j; });
   renderList(list);
+  updateCwdSelect(list);
   if (selectedId && jobs[selectedId]) {
     const activeStatuses = ['pending', 'planning', 'awaiting_approval', 'awaiting_tool_approval', 'running'];
     const statusChanged = prevSelectedStatus !== jobs[selectedId].status;
@@ -481,7 +515,10 @@ async function submitJob() {
   if (!prompt) return;
   const toolsRaw = document.getElementById('tools').value.trim();
   const tools = toolsRaw ? toolsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['Read','Edit','Glob'];
-  const cwdVal = document.getElementById('cwd').value.trim();
+  const cwdSel = document.getElementById('cwd-select');
+  const cwdVal = cwdSel.value === '__new__'
+    ? document.getElementById('cwd-custom').value.trim()
+    : cwdSel.value;
   const body = cwdVal ? {prompt, tools, cwd: cwdVal, mode: currentMode} : {prompt, tools, mode: currentMode};
   if (pendingFiles.length) {
     body.images = pendingFiles.map(({ mediaType, data }) => ({ mediaType, data }));

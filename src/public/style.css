@@ -9,6 +9,9 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .form-right { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
 .create-form input[type=text] { background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 12px; font-family: monospace; }
 .create-form input[type=text]:focus { outline: none; border-color: #555; }
+.create-form select { background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 28px 8px 10px; font-size: 12px; font-family: monospace; cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+.create-form select:focus { outline: none; border-color: #555; }
+.create-form select option[value="__new__"] { color: #6b9eff; }
 .form-submit-row { display: flex; gap: 8px; align-items: stretch; }
 #submit-btn { flex: 1; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer; font-weight: 500; }
 #submit-btn:hover { background: #1d4ed8; }
