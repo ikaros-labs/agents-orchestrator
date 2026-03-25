@@ -343,6 +343,8 @@ function renderDetail(job) {
   const started = job.startedAt ? new Date(job.startedAt).toLocaleTimeString() : '—';
   const finished = job.finishedAt ? new Date(job.finishedAt).toLocaleTimeString() : '—';
   const logHtml = job.log.map(renderLogEntry).join('');
+  const initialEntryHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`;
+  const feedHtml = initialEntryHtml + logHtml;
   const resultHtml = job.result
     ? `<div class="result-box result-success">Result: ${escHtml(job.result)}</div>`
     : job.error
@@ -430,8 +432,6 @@ function renderDetail(job) {
 
   document.getElementById('detail').innerHTML = `
     <div class="detail-header">
-      <div class="detail-prompt">${escHtml(job.prompt)}</div>
-      ${renderInputImages(job)}
       <div class="detail-meta">
         ${badge(job.status)}
         <span>Started: ${started}</span>
@@ -441,7 +441,7 @@ function renderDetail(job) {
         ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
       </div>
     </div>
-    <div class="log-feed" id="log-feed">${logHtml || '<span style="color:#444;font-size:13px">No log entries yet</span>'}</div>
+    <div class="log-feed" id="log-feed">${feedHtml}</div>
     ${resultHtml}
     ${questionBarHtml}
     ${approveBarHtml}
