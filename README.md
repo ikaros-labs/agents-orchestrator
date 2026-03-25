@@ -223,3 +223,20 @@ Saved images are served at `GET /images/:jobId/:filename`.
 | `PORT` | `3000` | HTTP port |
 | `HOST` | `localhost` | Hostname to bind |
 | `ANTHROPIC_API_KEY` | — | Required for the agent to run |
+
+---
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes
+4. Push to your branch and open a pull request
+
+---
+
+## License
+
+MIT
