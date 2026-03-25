@@ -428,10 +428,9 @@ function renderDetail(job) {
     _scrollWasAtBottom = (_oldScrollHeight - _oldFeed.clientHeight - _oldScrollTop) <= 80;
   }
 
+  const initialEntryHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`;
   document.getElementById('detail').innerHTML = `
     <div class="detail-header">
-      <div class="detail-prompt">${escHtml(job.prompt)}</div>
-      ${renderInputImages(job)}
       <div class="detail-meta">
         ${badge(job.status)}
         <span>Started: ${started}</span>
@@ -441,7 +440,7 @@ function renderDetail(job) {
         ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
       </div>
     </div>
-    <div class="log-feed" id="log-feed">${logHtml || '<span style="color:#444;font-size:13px">No log entries yet</span>'}</div>
+    <div class="log-feed" id="log-feed">${initialEntryHtml}${logHtml}</div>
     ${resultHtml}
     ${questionBarHtml}
     ${approveBarHtml}
