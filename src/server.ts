@@ -122,6 +122,7 @@ async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string)
 }
 
 async function planJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+  console.log(`[planJob] id=${id}`);
   store.setStatus(id, "planning");
   const planTexts: string[] = [];
   let imageCounter = rawImages.length; // output images start after input image indices
@@ -169,6 +170,7 @@ async function planJob(id: string, prompt: string, tools: string[], cwd: string 
 }
 
 async function revisePlanJob(id: string, feedback: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
+  console.log(`[revisePlanJob] id=${id}`);
   store.setStatus(id, "planning");
   store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
   const planTexts: string[] = [];
@@ -215,6 +217,7 @@ async function revisePlanJob(id: string, feedback: string, sessionId: string, to
 }
 
 async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+  console.log(`[directExecuteJob] id=${id}`);
   store.setStatus(id, "running");
   let imageCounter = rawImages.length;
   try {
@@ -259,6 +262,7 @@ async function directExecuteJob(id: string, prompt: string, tools: string[], cwd
 }
 
 async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
+  console.log(`[executeJob] id=${id}`);
   store.setStatus(id, "running");
   let imageCounter = 0;
   try {
@@ -301,6 +305,7 @@ async function executeJob(id: string, sessionId: string, tools: string[], cwd: s
 }
 
 async function followUpJob(id: string, prompt: string, sessionId: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+  console.log(`[followUpJob] id=${id}`);
   store.setStatus(id, "running");
   store.clearResult(id);
   store.appendLog(id, { type: "user", text: prompt, ts: new Date().toISOString() });
