@@ -194,8 +194,10 @@ function renderInputImages(job) {
 const questionAnswers = {}; // { [jobId]: { [questionText]: string } }
 
 function renderQuestionBar(job) {
-  if (job.status !== 'awaiting_user_question' || !job.pendingTool) return '';
-  const questions = job.pendingTool.input?.questions ?? [];
+  if (job.status !== 'awaiting_user_question') return '';
+  const askTool = (job.pendingTools ?? []).find(t => t.name === 'AskUserQuestion');
+  if (!askTool) return '';
+  const questions = askTool.input?.questions ?? [];
   if (!questions.length) return '';
   const id = job.id;
   const saved = questionAnswers[id] ?? {};
@@ -253,8 +255,10 @@ function renderQuestionBar(job) {
 
 function _snapshotQuestionAnswers(job) {
   // Read current form selections into questionAnswers before a DOM rebuild
-  if (job.status !== 'awaiting_user_question' || !job.pendingTool) return;
-  const questions = job.pendingTool.input?.questions ?? [];
+  if (job.status !== 'awaiting_user_question') return;
+  const askTool = (job.pendingTools ?? []).find(t => t.name === 'AskUserQuestion');
+  if (!askTool) return;
+  const questions = askTool.input?.questions ?? [];
   const id = job.id;
   if (!questionAnswers[id]) questionAnswers[id] = {};
   questions.forEach((q, i) => {
@@ -289,7 +293,8 @@ function _snapshotQuestionAnswers(job) {
 async function answerQuestion(id) {
   const job = jobs[id];
   if (!job) return;
-  const questions = job.pendingTool?.input?.questions ?? [];
+  const askTool = (job.pendingTools ?? []).find(t => t.name === 'AskUserQuestion');
+  const questions = askTool?.input?.questions ?? [];
   const answers = {};
   questions.forEach((q, i) => {
     const name = `q_${id}_${i}`;
@@ -369,14 +374,17 @@ function renderDetail(job) {
   // Snapshot BEFORE renderQuestionBar so it can restore the fresh selections
   _snapshotQuestionAnswers(job);
   const questionBarHtml = renderQuestionBar(job);
-  const toolApprovalBarHtml = job.status === 'awaiting_tool_approval' && job.pendingTool
-    ? (() => {
-        const tool = job.pendingTool;
+  const pendingToolsList = job.status === 'awaiting_tool_approval'
+    ? (job.pendingTools ?? []).filter(t => t.name !== 'AskUserQuestion')
+    : [];
+  const toolApprovalBarHtml = pendingToolsList.length > 0
+    ? pendingToolsList.map(tool => {
         const inputRows = Object.entries(tool.input || {})
           .map(([k, v]) => {
             const val = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
             return `<div class="tool-input-row"><span class="tool-input-key">${escHtml(k)}</span><span class="tool-input-val">${escHtml(val)}</span></div>`;
           }).join('');
+        const toolUseID = escHtml(tool.toolUseID);
         return `<div class="tool-approval-bar">
           <div class="tool-approval-header">
             <span class="tool-approval-label">Tool request</span>
@@ -384,11 +392,11 @@ function renderDetail(job) {
           </div>
           ${inputRows ? `<div class="tool-input-detail">${inputRows}</div>` : ''}
           <div class="tool-approval-actions">
-            <button class="btn-approve" onclick="approveToolUse('${job.id}')">Approve</button>
-            <button class="btn-reject" onclick="rejectToolUse('${job.id}')">Deny</button>
+            <button class="btn-approve" onclick="approveToolUse('${job.id}', '${toolUseID}')">Approve</button>
+            <button class="btn-reject" onclick="rejectToolUse('${job.id}', '${toolUseID}')">Deny</button>
           </div>
         </div>`;
-      })()
+      }).join('')
     : '';
   const followupBarHtml = (job.status === 'completed' || job.status === 'failed') && job.sessionId
     ? `<div class="followup-bar">
@@ -552,15 +560,15 @@ async function poll() {
   }
 }
 
-async function approveToolUse(id) {
-  await fetch('/jobs/' + id + '/approve-tool', { method: 'POST' });
+async function approveToolUse(id, toolUseID) {
+  await fetch('/jobs/' + id + '/approve-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolUseID }) });
   const job = await fetch('/jobs/' + id).then(r => r.json());
   jobs[id] = job;
   renderDetail(job);
 }
 
-async function rejectToolUse(id) {
-  await fetch('/jobs/' + id + '/reject-tool', { method: 'POST' });
+async function rejectToolUse(id, toolUseID) {
+  await fetch('/jobs/' + id + '/reject-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolUseID }) });
   const job = await fetch('/jobs/' + id).then(r => r.json());
   jobs[id] = job;
   renderDetail(job);

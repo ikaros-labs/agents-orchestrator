@@ -1,4 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import * as store from "./store.ts";
@@ -14,30 +15,35 @@ const UI_HTML = await Bun.file(new URL("./public/index.html", import.meta.url)).
 
 // ── canUseTool resolver map ──────────────────────────────────────────────────
 // When Claude wants to use a tool during execution, canUseTool stores a
-// Promise resolver here keyed by job ID. The approve/reject endpoints then
-// resolve it with the user's decision, unblocking the agent.
-type ToolDecision =
-  | { behavior: "allow"; updatedInput: unknown }
-  | { behavior: "deny"; message: string };
+// Promise resolver here keyed by job ID, then by toolUseID. This supports
+// parallel tool calls (e.g. from subagents) where multiple approvals can be
+// in-flight simultaneously. The approve/reject endpoints resolve each by
+// toolUseID, unblocking the specific agent call that was waiting.
+const pendingToolApprovals = new Map<string, Map<string, { resolve: (d: PermissionResult) => void }>>();
 
-const pendingToolApprovals = new Map<string, { resolve: (d: ToolDecision) => void }>();
+function makeCanUseTool(id: string): CanUseTool {
+  return async (toolName: string, input: Record<string, unknown>, options): Promise<PermissionResult> => {
+    const { toolUseID, agentID } = options;
 
-function makeCanUseTool(id: string) {
-  return async (toolName: string, input: unknown): Promise<ToolDecision> => {
     // Deny ExitPlanMode so the planning query ends cleanly here.
     // Execution is triggered separately via executeJob() once the user approves the plan.
     if (toolName === "ExitPlanMode") {
       return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
     }
-    store.setPendingTool(id, toolName, input as Record<string, unknown>);
-    console.log(`[canUseTool] id=${id} tool=${toolName} → awaiting approval`);
-    if (toolName === "AskUserQuestion") {
-      store.setStatus(id, "awaiting_user_question");
-    } else {
-      store.setStatus(id, "awaiting_tool_approval");
+
+    store.addPendingTool(id, toolUseID, toolName, input, agentID);
+    console.log(`[canUseTool] id=${id} tool=${toolName} toolUseID=${toolUseID} → awaiting approval`);
+
+    const job = store.getJob(id);
+    if (job && job.status !== "awaiting_tool_approval" && job.status !== "awaiting_user_question") {
+      store.setStatus(id, toolName === "AskUserQuestion" ? "awaiting_user_question" : "awaiting_tool_approval");
     }
-    return new Promise<ToolDecision>((resolve) => {
-      pendingToolApprovals.set(id, { resolve });
+
+    if (!pendingToolApprovals.has(id)) {
+      pendingToolApprovals.set(id, new Map());
+    }
+    return new Promise<PermissionResult>((resolve) => {
+      pendingToolApprovals.get(id)!.set(toolUseID, { resolve });
     });
   };
 }
@@ -453,15 +459,25 @@ Bun.serve({
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
-      const pending = pendingToolApprovals.get(id);
-      if (!pending) return jsonError(500, "No pending tool approval resolver found");
-      const approvedInput = job.pendingTool?.input ?? {};
-      console.log(`[approve-tool] id=${id} tool=${job.pendingTool?.name} → granted`);
-      store.clearPendingTool(id);
-      store.setStatus(id, "running");
-      pendingToolApprovals.delete(id);
+      let body: unknown;
+      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
+      const b = body as Record<string, unknown>;
+      const toolUseID = typeof b["toolUseID"] === "string" ? b["toolUseID"] : null;
+      if (!toolUseID) return jsonError(400, "toolUseID is required");
+      const jobApprovals = pendingToolApprovals.get(id);
+      const pending = jobApprovals?.get(toolUseID);
+      if (!pending) return jsonError(404, "No pending tool approval found for that toolUseID");
+      const pendingTool = job.pendingTools.find(t => t.toolUseID === toolUseID);
+      const approvedInput = pendingTool?.input ?? {};
+      console.log(`[approve-tool] id=${id} tool=${pendingTool?.name} toolUseID=${toolUseID} → granted`);
+      store.removePendingTool(id, toolUseID);
+      jobApprovals!.delete(toolUseID);
+      if (job.pendingTools.length === 0) {
+        store.setStatus(id, "running");
+        if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
+      }
       pending.resolve({ behavior: "allow", updatedInput: approvedInput });
-      return json(202, { id, status: "running" });
+      return json(202, { id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
     }
 
     const rejectToolMatch = path.match(/^\/jobs\/([^/]+)\/reject-tool$/);
@@ -470,13 +486,22 @@ Bun.serve({
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
-      const pending = pendingToolApprovals.get(id);
-      if (!pending) return jsonError(500, "No pending tool approval resolver found");
-      store.clearPendingTool(id);
-      store.setStatus(id, "running");
-      pendingToolApprovals.delete(id);
+      let body: unknown;
+      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
+      const b = body as Record<string, unknown>;
+      const toolUseID = typeof b["toolUseID"] === "string" ? b["toolUseID"] : null;
+      if (!toolUseID) return jsonError(400, "toolUseID is required");
+      const jobApprovals = pendingToolApprovals.get(id);
+      const pending = jobApprovals?.get(toolUseID);
+      if (!pending) return jsonError(404, "No pending tool approval found for that toolUseID");
+      store.removePendingTool(id, toolUseID);
+      jobApprovals!.delete(toolUseID);
+      if (job.pendingTools.length === 0) {
+        store.setStatus(id, "running");
+        if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
+      }
       pending.resolve({ behavior: "deny", message: "User denied this tool call" });
-      return json(200, { id, status: "running" });
+      return json(200, { id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
     }
 
     const answerQuestionMatch = path.match(/^\/jobs\/([^/]+)\/answer-question$/);
@@ -485,7 +510,10 @@ Bun.serve({
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_user_question") return jsonError(409, "Job is not awaiting a user question");
-      const pending = pendingToolApprovals.get(id);
+      const askToolEntry = job.pendingTools.find(t => t.name === "AskUserQuestion");
+      if (!askToolEntry) return jsonError(500, "No AskUserQuestion tool found in pending tools");
+      const jobApprovals = pendingToolApprovals.get(id);
+      const pending = jobApprovals?.get(askToolEntry.toolUseID);
       if (!pending) return jsonError(500, "No pending question resolver found");
       let body: unknown;
       try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
@@ -493,7 +521,7 @@ Bun.serve({
       if (typeof b["answers"] !== "object" || b["answers"] === null || Array.isArray(b["answers"])) {
         return jsonError(400, "answers must be a plain object");
       }
-      const questions = ((job.pendingTool?.input as any)?.questions) ?? [];
+      const questions = ((askToolEntry.input as any)?.questions) ?? [];
       const answers = b["answers"] as Record<string, string>;
       // Log answers to the job feed so they're visible in the conversation
       const ts = new Date().toISOString();
@@ -502,10 +530,11 @@ Bun.serve({
         return `${q.question}\n→ ${ans}`;
       }).join("\n\n");
       if (answerText) store.appendLog(id, { type: "user", text: answerText, ts });
-      store.clearPendingTool(id);
+      store.removePendingTool(id, askToolEntry.toolUseID);
+      jobApprovals!.delete(askToolEntry.toolUseID);
+      if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
       // Return to "planning" if we haven't produced a plan yet, otherwise "running"
       store.setStatus(id, job.plan === null ? "planning" : "running");
-      pendingToolApprovals.delete(id);
       pending.resolve({ behavior: "allow", updatedInput: { questions, answers } });
       return json(202, { id, status: "running" });
     }

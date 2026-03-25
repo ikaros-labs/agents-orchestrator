@@ -15,6 +15,10 @@ export function loadStore(): void {
     if (!file.endsWith(".json")) continue;
     try {
       const job = JSON.parse(readFileSync(`${DATA_DIR}/${file}`, "utf8")) as Job;
+      // Migrate old single-pendingTool format to array
+      if (!Array.isArray(job.pendingTools)) {
+        job.pendingTools = [];
+      }
       jobs.set(job.id, job);
     } catch {
       // skip corrupt files
@@ -39,7 +43,7 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     result: null,
     error: null,
     images,
-    pendingTool: null,
+    pendingTools: [],
   };
   jobs.set(id, job);
   persistJob(job);
@@ -94,17 +98,17 @@ export function setError(id: string, error: string): void {
   persistJob(job);
 }
 
-export function setPendingTool(id: string, name: string, input: Record<string, unknown>): void {
+export function addPendingTool(id: string, toolUseID: string, name: string, input: Record<string, unknown>, agentID?: string): void {
   const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setPendingTool: job not found: ${id}`); return; }
-  job.pendingTool = { name, input };
+  if (!job) { console.warn(`[store] addPendingTool: job not found: ${id}`); return; }
+  job.pendingTools.push({ toolUseID, name, input, agentID });
   persistJob(job);
 }
 
-export function clearPendingTool(id: string): void {
+export function removePendingTool(id: string, toolUseID: string): void {
   const job = jobs.get(id);
-  if (!job) { console.warn(`[store] clearPendingTool: job not found: ${id}`); return; }
-  job.pendingTool = null;
+  if (!job) { console.warn(`[store] removePendingTool: job not found: ${id}`); return; }
+  job.pendingTools = job.pendingTools.filter(t => t.toolUseID !== toolUseID);
   persistJob(job);
 }
 
