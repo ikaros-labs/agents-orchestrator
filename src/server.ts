@@ -25,7 +25,11 @@ const pendingToolApprovals = new Map<string, { resolve: (d: ToolDecision) => voi
 function makeCanUseTool(id: string) {
   return async (toolName: string, input: unknown): Promise<ToolDecision> => {
     store.setPendingTool(id, toolName, input as Record<string, unknown>);
-    store.setStatus(id, "awaiting_tool_approval");
+    if (toolName === "AskUserQuestion") {
+      store.setStatus(id, "awaiting_user_question");
+    } else {
+      store.setStatus(id, "awaiting_tool_approval");
+    }
     return new Promise<ToolDecision>((resolve) => {
       pendingToolApprovals.set(id, { resolve });
     });
@@ -125,6 +129,7 @@ async function planJob(id: string, prompt: string, tools: string[], cwd: string 
       options: {
         allowedTools: tools,
         permissionMode: "plan",
+        canUseTool: makeCanUseTool(id),
         ...(cwd ? { cwd } : {}),
       },
     })) {
@@ -169,6 +174,7 @@ async function revisePlanJob(id: string, feedback: string, sessionId: string, to
       options: {
         allowedTools: tools,
         permissionMode: "plan",
+        canUseTool: makeCanUseTool(id),
         resume: sessionId,
         ...(cwd ? { cwd } : {}),
       },
@@ -555,6 +561,37 @@ Bun.serve({
       pendingToolApprovals.delete(id);
       pending.resolve({ behavior: "deny", message: "User denied this tool call" });
       return json(200, { id, status: "running" });
+    }
+
+    const answerQuestionMatch = path.match(/^\/jobs\/([^/]+)\/answer-question$/);
+    if (req.method === "POST" && answerQuestionMatch) {
+      const id = answerQuestionMatch[1]!;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      if (job.status !== "awaiting_user_question") return jsonError(409, "Job is not awaiting a user question");
+      const pending = pendingToolApprovals.get(id);
+      if (!pending) return jsonError(500, "No pending question resolver found");
+      let body: unknown;
+      try { body = await req.json(); } catch { return jsonError(400, "Invalid JSON body"); }
+      const b = body as Record<string, unknown>;
+      if (typeof b["answers"] !== "object" || b["answers"] === null || Array.isArray(b["answers"])) {
+        return jsonError(400, "answers must be a plain object");
+      }
+      const questions = ((job.pendingTool?.input as any)?.questions) ?? [];
+      const answers = b["answers"] as Record<string, string>;
+      // Log answers to the job feed so they're visible in the conversation
+      const ts = new Date().toISOString();
+      const answerText = (questions as any[]).map((q: any) => {
+        const ans = answers[q.question] ?? "(no answer)";
+        return `${q.question}\n→ ${ans}`;
+      }).join("\n\n");
+      if (answerText) store.appendLog(id, { type: "user", text: answerText, ts });
+      store.clearPendingTool(id);
+      // Return to "planning" if we haven't produced a plan yet, otherwise "running"
+      store.setStatus(id, job.plan === null ? "planning" : "running");
+      pendingToolApprovals.delete(id);
+      pending.resolve({ behavior: "allow", updatedInput: { questions, answers } });
+      return json(202, { id, status: "running" });
     }
 
     const followupMatch = path.match(/^\/jobs\/([^/]+)\/followup$/);

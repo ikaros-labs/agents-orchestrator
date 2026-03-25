@@ -1,4 +1,4 @@
-export type JobStatus = "pending" | "planning" | "awaiting_approval" | "awaiting_tool_approval" | "running" | "completed" | "failed";
+export type JobStatus = "pending" | "planning" | "awaiting_approval" | "awaiting_tool_approval" | "awaiting_user_question" | "running" | "completed" | "failed";
 
 export type JobMode = "auto" | "plan" | "edit";
 

@@ -74,9 +74,10 @@ function badge(status) {
   const labels = {
     awaiting_approval: 'needs approval',
     awaiting_tool_approval: 'tool approval',
+    awaiting_user_question: 'question',
   };
   const label = labels[status] ?? status;
-  const spinnerStatuses = new Set(['running', 'planning', 'awaiting_tool_approval']);
+  const spinnerStatuses = new Set(['running', 'planning', 'awaiting_tool_approval', 'awaiting_user_question']);
   const spinner = spinnerStatuses.has(status) ? '<span class="spinner"></span>' : '';
   return `<span class="badge badge-${status}">${spinner}${label}</span>`;
 }
@@ -184,6 +185,152 @@ function renderInputImages(job) {
   return `<div class="input-images-row">${items}</div>`;
 }
 
+// ── AskUserQuestion state & rendering ──────────────────────────────────────
+// Preserves answer selections across polling DOM rebuilds, keyed by jobId.
+const questionAnswers = {}; // { [jobId]: { [questionText]: string } }
+
+function renderQuestionBar(job) {
+  if (job.status !== 'awaiting_user_question' || !job.pendingTool) return '';
+  const questions = job.pendingTool.input?.questions ?? [];
+  if (!questions.length) return '';
+  const id = job.id;
+  const saved = questionAnswers[id] ?? {};
+
+  const questionsHtml = questions.map((q, i) => {
+    const name = `q_${id}_${i}`;
+    const inputType = q.multiSelect ? 'checkbox' : 'radio';
+    const savedVal = saved[q.question] ?? '';
+    const savedArr = savedVal ? savedVal.split(', ') : [];
+
+    const optionsHtml = (q.options ?? []).map(opt => {
+      const checked = savedArr.includes(opt.label) ? 'checked' : '';
+      return `<label class="question-option">
+        <input type="${inputType}" name="${name}" value="${escHtml(opt.label)}" ${checked}>
+        <span class="question-option-body">
+          <span class="question-option-label">${escHtml(opt.label)}</span>
+          ${opt.description ? `<span class="question-option-desc">${escHtml(opt.description)}</span>` : ''}
+        </span>
+      </label>`;
+    }).join('');
+
+    // Detect if the current saved value is a free-text (not one of the preset labels)
+    const presetLabels = (q.options ?? []).map(o => o.label);
+    const otherVals = savedArr.filter(v => !presetLabels.includes(v));
+    const otherChecked = otherVals.length ? 'checked' : '';
+    const otherText = otherVals.join(', ');
+
+    const otherHtml = `<label class="question-option-other">
+      <input type="${inputType}" name="${name}" value="__other__" ${otherChecked}>
+      <span class="question-option-other-label">Other:</span>
+      <input type="text" id="${name}_other" placeholder="Type a custom answer…" value="${escHtml(otherText)}">
+    </label>`;
+
+    return `<div class="question-item">
+      ${q.header ? `<span class="question-header-chip">${escHtml(q.header)}</span>` : ''}
+      <div class="question-text">${escHtml(q.question)}</div>
+      <div class="question-options">
+        ${optionsHtml}
+        ${otherHtml}
+      </div>
+    </div>`;
+  }).join('<hr class="question-divider">');
+
+  return `<div class="question-bar">
+    <div class="question-bar-header">
+      <span class="question-bar-label">Clarifying questions</span>
+      <span class="question-bar-title">Claude needs your input to continue</span>
+    </div>
+    ${questionsHtml}
+    <div class="question-bar-actions">
+      <button class="btn-answer" id="answer-btn-${id}" onclick="answerQuestion('${id}')">Submit Answers</button>
+    </div>
+  </div>`;
+}
+
+function _snapshotQuestionAnswers(job) {
+  // Read current form selections into questionAnswers before a DOM rebuild
+  if (job.status !== 'awaiting_user_question' || !job.pendingTool) return;
+  const questions = job.pendingTool.input?.questions ?? [];
+  const id = job.id;
+  if (!questionAnswers[id]) questionAnswers[id] = {};
+  questions.forEach((q, i) => {
+    const name = `q_${id}_${i}`;
+    const inputs = document.querySelectorAll(`[name="${name}"]`);
+    if (q.multiSelect) {
+      const vals = [];
+      inputs.forEach(inp => {
+        if (inp.checked) {
+          if (inp.value === '__other__') {
+            const t = (document.getElementById(`${name}_other`)?.value ?? '').trim();
+            if (t) vals.push(t);
+          } else {
+            vals.push(inp.value);
+          }
+        }
+      });
+      questionAnswers[id][q.question] = vals.join(', ');
+    } else {
+      const checked = Array.from(inputs).find(inp => inp.checked);
+      if (checked) {
+        if (checked.value === '__other__') {
+          questionAnswers[id][q.question] = (document.getElementById(`${name}_other`)?.value ?? '').trim();
+        } else {
+          questionAnswers[id][q.question] = checked.value;
+        }
+      }
+    }
+  });
+}
+
+async function answerQuestion(id) {
+  const job = jobs[id];
+  if (!job) return;
+  const questions = job.pendingTool?.input?.questions ?? [];
+  const answers = {};
+  questions.forEach((q, i) => {
+    const name = `q_${id}_${i}`;
+    const inputs = document.querySelectorAll(`[name="${name}"]`);
+    if (q.multiSelect) {
+      const selected = [];
+      inputs.forEach(inp => {
+        if (inp.checked) {
+          if (inp.value === '__other__') {
+            const t = (document.getElementById(`${name}_other`)?.value ?? '').trim();
+            if (t) selected.push(t);
+          } else {
+            selected.push(inp.value);
+          }
+        }
+      });
+      answers[q.question] = selected.join(', ') || '';
+    } else {
+      const checked = Array.from(inputs).find(inp => inp.checked);
+      if (checked) {
+        if (checked.value === '__other__') {
+          answers[q.question] = (document.getElementById(`${name}_other`)?.value ?? '').trim();
+        } else {
+          answers[q.question] = checked.value;
+        }
+      }
+    }
+  });
+  const btn = document.getElementById(`answer-btn-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+  try {
+    await fetch(`/jobs/${id}/answer-question`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers }),
+    });
+    delete questionAnswers[id];
+    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
+    if (refreshed) { jobs[id] = refreshed; renderDetailFresh = true; renderDetail(refreshed); }
+    await poll();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit Answers'; }
+  }
+}
+
 function renderDetail(job) {
   if (!job) { document.getElementById('detail').innerHTML = '<div class="detail-empty">Select a job to see details</div>'; return; }
   const started = job.startedAt ? new Date(job.startedAt).toLocaleTimeString() : '—';
@@ -215,6 +362,9 @@ function renderDetail(job) {
         </div>
       </div>`
     : '';
+  // Snapshot BEFORE renderQuestionBar so it can restore the fresh selections
+  _snapshotQuestionAnswers(job);
+  const questionBarHtml = renderQuestionBar(job);
   const toolApprovalBarHtml = job.status === 'awaiting_tool_approval' && job.pendingTool
     ? (() => {
         const tool = job.pendingTool;
@@ -282,6 +432,7 @@ function renderDetail(job) {
     </div>
     <div class="log-feed" id="log-feed">${logHtml || '<span style="color:#444;font-size:13px">No log entries yet</span>'}</div>
     ${resultHtml}
+    ${questionBarHtml}
     ${approveBarHtml}
     ${toolApprovalBarHtml}
     ${followupBarHtml}
@@ -401,7 +552,7 @@ async function poll() {
   renderList(list);
   updateCwdSelect(list);
   if (selectedId && jobs[selectedId]) {
-    const activeStatuses = ['pending', 'planning', 'awaiting_approval', 'awaiting_tool_approval', 'running'];
+    const activeStatuses = ['pending', 'planning', 'awaiting_approval', 'awaiting_tool_approval', 'awaiting_user_question', 'running'];
     const statusChanged = prevSelectedStatus !== jobs[selectedId].status;
     if (activeStatuses.includes(jobs[selectedId].status) || statusChanged) {
       const job = await fetch('/jobs/' + selectedId).then(r => r.json()).catch(() => null);
