@@ -11,6 +11,18 @@ bun run start # production
 
 Runtime and package manager: **bun**
 
+### Running across worktrees
+
+Use `server.sh` to start the server. It automatically kills any existing instance first, so you never need to manage multiple servers.
+
+```bash
+./server.sh                          # start from current worktree
+./server.sh /path/to/other-worktree  # switch to a different worktree
+./server.sh --dev                    # watch mode
+```
+
+PID is stored in `/tmp/agents-orchestrator.pid`; logs go to `/tmp/agents-orchestrator.log`.
+
 ## API
 
 - `GET /` — management UI
