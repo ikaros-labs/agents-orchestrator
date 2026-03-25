@@ -1,7 +1,12 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { join } from "node:path";
 import * as store from "./store.ts";
+
+const execFileAsync = promisify(execFile);
 
 // ── Directory constants ──────────────────────────────────────────────────────
 
@@ -199,16 +204,53 @@ async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string)
   };
 }
 
+// ── Worktree helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Creates a git worktree for a job at `<gitRoot>/.agent-worktrees/<jobId>` and
+ * returns the absolute path to the new worktree. Throws if the directory is not
+ * inside a git repository or if `git worktree add` fails.
+ */
+async function createWorktree(cwd: string, jobId: string): Promise<string> {
+  const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+  const gitRoot = stdout.trim();
+  const worktreesParent = join(gitRoot, ".agent-worktrees");
+  await mkdir(worktreesParent, { recursive: true });
+  const worktreePath = join(worktreesParent, jobId);
+  await execFileAsync("git", ["-C", gitRoot, "worktree", "add", "--detach", worktreePath]);
+  return worktreePath;
+}
+
+/**
+ * Resolves the effective cwd for an agent run.
+ * - If `useWorktree` is false or `cwd` is null, returns `cwd` unchanged.
+ * - Otherwise attempts to create a git worktree; on success stores the path on
+ *   the job and returns it. On failure logs a warning and falls back to `cwd`.
+ */
+async function resolveEffectiveCwd(id: string, cwd: string | null, useWorktree: boolean): Promise<string | null> {
+  if (!useWorktree || !cwd) return cwd;
+  try {
+    const worktreePath = await createWorktree(cwd, id);
+    store.setWorktreePath(id, worktreePath);
+    console.log(`[worktree] created for job ${id}: ${worktreePath}`);
+    return worktreePath;
+  } catch (err) {
+    console.warn(`[worktree] failed to create worktree for job ${id} (falling back to cwd): ${err}`);
+    return cwd;
+  }
+}
+
 // ── Job runners (exported) ───────────────────────────────────────────────────
 
-export async function planJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+export async function planJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
   console.log(`[planJob] id=${id}`);
   store.setStatus(id, "planning");
+  const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     store.setPlan(id, planTexts.join("\n"));
@@ -235,14 +277,15 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
   }
 }
 
-export async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+export async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
   console.log(`[directExecuteJob] id=${id}`);
   store.setStatus(id, "running");
+  const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
     store.setStatus(id, "completed");

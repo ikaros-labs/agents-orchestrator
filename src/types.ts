@@ -36,6 +36,8 @@ export interface Job {
   finishedAt: string | null;
   log: LogEntry[];
   cwd: string | null;
+  useWorktree: boolean;
+  worktreePath: string | null;
   plan: string | null;
   sessionId: string | null;
   result: string | null;

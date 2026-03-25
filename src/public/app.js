@@ -438,6 +438,7 @@ function renderDetail(job) {
         <span>Finished: ${finished}</span>
         <span>Tools: ${job.tools.join(', ')}</span>
         ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
+        ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
       </div>
     </div>
     <div class="log-feed" id="log-feed">${logHtml || '<span style="color:#444;font-size:13px">No log entries yet</span>'}</div>
@@ -718,7 +719,8 @@ async function submitJob() {
   const cwdVal = cwdSel.value === '__new__'
     ? document.getElementById('cwd-custom').value.trim()
     : cwdSel.value;
-  const body = cwdVal ? {prompt, tools, cwd: cwdVal, mode: currentMode} : {prompt, tools, mode: currentMode};
+  const useWorktree = document.getElementById('use-worktree').checked;
+  const body = cwdVal ? {prompt, tools, cwd: cwdVal, useWorktree, mode: currentMode} : {prompt, tools, useWorktree, mode: currentMode};
   if (pendingFiles.length) {
     body.images = pendingFiles.map(({ mediaType, data }) => ({ mediaType, data }));
   }

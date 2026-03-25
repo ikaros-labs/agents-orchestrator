@@ -143,7 +143,7 @@ Bun.serve({
       if (req.method === "POST") {
         const parsed = await parseBody(req, CreateJobSchema);
         if (parsed instanceof Response) return parsed;
-        const { prompt, tools: rawTools, cwd = null, images: rawImages, mode } = parsed.data;
+        const { prompt, tools: rawTools, cwd = null, useWorktree, images: rawImages, mode } = parsed.data;
 
         const tools = rawTools ?? jobs.DEFAULT_TOOLS;
         const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
@@ -154,12 +154,12 @@ Bun.serve({
           filename: `${i}.${jobs.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
         }));
 
-        store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode);
+        store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree);
         if (mode === "edit") {
-          Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages));
+          Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
         } else {
           // "auto" and "plan" both use the planning flow
-          Promise.resolve().then(() => jobs.planJob(id, prompt, tools, cwd, rawImages));
+          Promise.resolve().then(() => jobs.planJob(id, prompt, tools, cwd, rawImages, useWorktree));
         }
 
         return Response.json({ id, status: "pending" }, { status: 202 });
@@ -185,7 +185,7 @@ Bun.serve({
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
       if (!job.sessionId) return jsonError(500, "No session ID from planning phase");
-      Promise.resolve().then(() => jobs.executeJob(id, job.sessionId!, job.tools, job.cwd));
+      Promise.resolve().then(() => jobs.executeJob(id, job.sessionId!, job.tools, job.worktreePath ?? job.cwd));
       return Response.json({ id, status: "running" }, { status: 202 });
     },
 
@@ -207,7 +207,7 @@ Bun.serve({
       if (!job.sessionId) return jsonError(500, "No session ID available for revision");
       const parsed = await parseBody(req, ReviseSchema);
       if (parsed instanceof Response) return parsed;
-      Promise.resolve().then(() => jobs.revisePlanJob(id, parsed.data.prompt, job.sessionId!, job.tools, job.cwd));
+      Promise.resolve().then(() => jobs.revisePlanJob(id, parsed.data.prompt, job.sessionId!, job.tools, job.worktreePath ?? job.cwd));
       return Response.json({ id, status: "planning" }, { status: 202 });
     },
 
@@ -287,7 +287,7 @@ Bun.serve({
       const parsed = await parseBody(req, FollowUpSchema);
       if (parsed instanceof Response) return parsed;
       const { prompt, images: rawImages } = parsed.data;
-      Promise.resolve().then(() => jobs.followUpJob(id, prompt, job.sessionId!, job.tools, job.cwd, rawImages));
+      Promise.resolve().then(() => jobs.followUpJob(id, prompt, job.sessionId!, job.tools, job.worktreePath ?? job.cwd, rawImages));
       return Response.json({ id, status: "running" }, { status: 202 });
     },
   },

@@ -12,6 +12,7 @@ export const CreateJobSchema = z.object({
   prompt: z.string().trim().min(1, "prompt must be a non-empty string"),
   tools: z.array(z.string()).optional(),
   cwd: z.string().optional(),
+  useWorktree: z.boolean().optional().default(true),
   images: z.array(RawImageSchema).default([]),
   mode: z.enum(["auto", "plan", "edit"]).optional().default("auto"),
 });

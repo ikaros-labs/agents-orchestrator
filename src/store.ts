@@ -52,6 +52,9 @@ export function loadStore(): void {
       if (!Array.isArray(job.pendingTools)) {
         job.pendingTools = [];
       }
+      // Migrate jobs created before worktree support
+      if (job.useWorktree === undefined) job.useWorktree = false;
+      if (job.worktreePath === undefined) job.worktreePath = null;
       jobs.set(job.id, job);
     } catch {
       // skip corrupt files
@@ -59,7 +62,7 @@ export function loadStore(): void {
   }
 }
 
-export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto"): Job {
+export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto", useWorktree: boolean = true): Job {
   const job: Job = {
     id,
     status: "pending",
@@ -67,6 +70,8 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     prompt,
     tools,
     cwd,
+    useWorktree,
+    worktreePath: null,
     createdAt: new Date().toISOString(),
     startedAt: null,
     finishedAt: null,
@@ -118,6 +123,13 @@ export function setSessionId(id: string, sessionId: string): void {
   const job = jobs.get(id);
   if (!job) { console.warn(`[store] setSessionId: job not found: ${id}`); return; }
   job.sessionId = sessionId;
+  persistJob(job);
+}
+
+export function setWorktreePath(id: string, worktreePath: string): void {
+  const job = jobs.get(id);
+  if (!job) { console.warn(`[store] setWorktreePath: job not found: ${id}`); return; }
+  job.worktreePath = worktreePath;
   persistJob(job);
 }
 
