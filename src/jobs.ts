@@ -4,12 +4,14 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import * as store from "./store.ts";
 
 const execFileAsync = promisify(execFile);
 
 // ── Directory constants ──────────────────────────────────────────────────────
 
+export const WORKTREES_DIR = process.env.AGENT_WORKTREES_DIR ?? join(homedir(), ".agent-worktrees");
 export const LOGS_DIR = "./logs";
 export const IMAGES_DIR = "./data/images";
 await mkdir(LOGS_DIR, { recursive: true });
@@ -47,7 +49,7 @@ const WORKTREE_SYSTEM_PROMPT_APPEND = `
 You are running inside a git worktree that has already been set up for you.
 - Do NOT create a new branch or a new worktree.
 - All bash commands and other tools must be run inside this worktree directory, not in the original parent repository.
-- After completing your changes, consider whether a pull request should be opened via the GitHub CLI (\`gh pr create\`) and do so if appropriate.
+- After finishing your task, if you modified any files, you MUST create a GitHub pull request using the GitHub CLI (\`gh pr create\`).
 `;
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -225,14 +227,16 @@ async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string)
 // ── Worktree helpers ─────────────────────────────────────────────────────────
 
 /**
- * Creates a git worktree for a job at `<gitRoot>/.agent-worktrees/<jobId>` and
- * returns the absolute path to the new worktree. Throws if the directory is not
- * inside a git repository or if `git worktree add` fails.
+ * Creates a git worktree for a job at `WORKTREES_DIR/<jobId>` and returns the
+ * absolute path to the new worktree. The base directory defaults to
+ * `~/.agent-worktrees` and can be overridden via the `AGENT_WORKTREES_DIR`
+ * environment variable. Throws if `cwd` is not inside a git repository or if
+ * `git worktree add` fails.
  */
 async function createWorktree(cwd: string, jobId: string): Promise<string> {
   const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
   const gitRoot = stdout.trim();
-  const worktreesParent = join(gitRoot, ".agent-worktrees");
+  const worktreesParent = WORKTREES_DIR;
   await mkdir(worktreesParent, { recursive: true });
   const worktreePath = join(worktreesParent, jobId);
   await execFileAsync("git", ["-C", gitRoot, "worktree", "add", "--detach", worktreePath]);
@@ -264,12 +268,11 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
   console.log(`[planJob] id=${id}`);
   store.setStatus(id, "planning");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
-  const inWorktree = !!store.getJob(id)?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     store.setPlan(id, planTexts.join("\n"));
@@ -283,10 +286,11 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
   console.log(`[revisePlanJob] id=${id}`);
   store.setStatus(id, "planning");
   store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
+  const inWorktree = !!store.getJob(id)?.worktreePath;
   try {
     const stream = query({
       prompt: feedback,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     store.setPlan(id, planTexts.join("\n"));
@@ -317,10 +321,11 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
 export async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
   console.log(`[executeJob] id=${id}`);
   store.setStatus(id, "running");
+  const inWorktree = !!store.getJob(id)?.worktreePath;
   try {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     store.setStatus(id, "completed");
@@ -337,10 +342,11 @@ export async function followUpJob(id: string, prompt: string, sessionId: string,
   const promptArg = rawImages.length > 0
     ? makePrompt(prompt, rawImages, `${id}-followup-${Date.now()}`)
     : prompt;
+  const inWorktree = !!store.getJob(id)?.worktreePath;
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     store.setStatus(id, "completed");
