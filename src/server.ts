@@ -24,6 +24,10 @@ const pendingToolApprovals = new Map<string, { resolve: (d: ToolDecision) => voi
 
 function makeCanUseTool(id: string) {
   return async (toolName: string, input: unknown): Promise<ToolDecision> => {
+    // ExitPlanMode is auto-approved — plan approval/rejection is handled by the UI buttons
+    if (toolName === "ExitPlanMode") {
+      return { behavior: "allow", updatedInput: input };
+    }
     store.setPendingTool(id, toolName, input as Record<string, unknown>);
     if (toolName === "AskUserQuestion") {
       store.setStatus(id, "awaiting_user_question");
