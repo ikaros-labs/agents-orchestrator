@@ -116,8 +116,15 @@ export function clearResult(id: string): void {
   persistJob(job);
 }
 
+function getLatestUserMessageTime(job: Job): number {
+  const times = job.log
+    .filter(e => e.type === "user")
+    .map(e => new Date(e.ts).getTime());
+  return Math.max(new Date(job.createdAt).getTime(), ...times);
+}
+
 export function listJobs(): Job[] {
   return Array.from(jobs.values()).sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    (a, b) => getLatestUserMessageTime(b) - getLatestUserMessageTime(a)
   );
 }

@@ -54,7 +54,7 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .tool-approval-header { display: flex; align-items: center; gap: 10px; }
 .tool-approval-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #7c3aed; }
 .tool-approval-name { font-size: 13px; font-family: monospace; font-weight: 700; color: #c084fc; background: #1a1035; border: 1px solid #3b1d6e; border-radius: 4px; padding: 2px 8px; }
-.tool-input-detail { display: flex; flex-direction: column; gap: 4px; background: #0b0b14; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px 12px; overflow-x: auto; }
+.tool-input-detail { display: flex; flex-direction: column; gap: 4px; background: #0b0b14; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px 12px; overflow-x: auto; max-height: 300px; overflow-y: auto; }
 .tool-input-row { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; font-family: monospace; line-height: 1.5; }
 .tool-input-key { color: #7c3aed; font-weight: 600; flex-shrink: 0; min-width: 80px; }
 .tool-input-val { color: #d1d5db; white-space: pre-wrap; word-break: break-all; }
