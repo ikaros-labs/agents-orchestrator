@@ -85,6 +85,22 @@ Bun.serve({
       });
     },
 
+    // ── Health check ───────────────────────────────────────────────────────
+
+    "/health": () => {
+      const allJobs = store.listJobs();
+      const byStatus = allJobs.reduce<Record<string, number>>((acc, job) => {
+        acc[job.status] = (acc[job.status] ?? 0) + 1;
+        return acc;
+      }, {});
+      return Response.json({
+        status: "ok",
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        jobs: { total: allJobs.length, byStatus },
+      });
+    },
+
     // ── SSE event stream ───────────────────────────────────────────────────
 
     "/events": () => {
