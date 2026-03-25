@@ -1,5 +1,17 @@
 export type JobStatus = "pending" | "planning" | "awaiting_approval" | "awaiting_tool_approval" | "awaiting_user_question" | "running" | "completed" | "failed";
 
+/** Runtime constants mirroring JobStatus — use these instead of bare string literals. */
+export const JOB_STATUS = {
+  PENDING: "pending",
+  PLANNING: "planning",
+  AWAITING_APPROVAL: "awaiting_approval",
+  AWAITING_TOOL_APPROVAL: "awaiting_tool_approval",
+  AWAITING_USER_QUESTION: "awaiting_user_question",
+  RUNNING: "running",
+  COMPLETED: "completed",
+  FAILED: "failed",
+} as const satisfies Record<string, JobStatus>;
+
 export type JobMode = "auto" | "plan" | "edit";
 
 export type LogEntry =

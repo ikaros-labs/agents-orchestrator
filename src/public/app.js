@@ -70,6 +70,11 @@ function relTime(iso) {
   return Math.floor(diff/3600000) + 'h ago';
 }
 
+// Statuses that display an animated spinner in the badge
+const SPINNER_STATUSES = new Set(['running', 'planning', 'awaiting_tool_approval', 'awaiting_user_question']);
+// Statuses that indicate a job is still in progress (triggers detail polling)
+const ACTIVE_STATUSES = new Set(['pending', 'planning', 'awaiting_approval', 'awaiting_tool_approval', 'awaiting_user_question', 'running']);
+
 function badge(status) {
   const labels = {
     awaiting_approval: 'needs approval',
@@ -77,8 +82,7 @@ function badge(status) {
     awaiting_user_question: 'question',
   };
   const label = labels[status] ?? status;
-  const spinnerStatuses = new Set(['running', 'planning', 'awaiting_tool_approval', 'awaiting_user_question']);
-  const spinner = spinnerStatuses.has(status) ? '<span class="spinner"></span>' : '';
+  const spinner = SPINNER_STATUSES.has(status) ? '<span class="spinner"></span>' : '';
   return `<span class="badge badge-${status}">${spinner}${label}</span>`;
 }
 
@@ -323,7 +327,7 @@ async function answerQuestion(id) {
       body: JSON.stringify({ answers }),
     });
     delete questionAnswers[id];
-    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
+    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(err => { console.warn('[answerQuestion] failed to refresh job:', err); return null; });
     if (refreshed) { jobs[id] = refreshed; renderDetailFresh = true; renderDetail(refreshed); }
     await poll();
   } finally {
@@ -483,57 +487,40 @@ function renderDetail(job) {
 const followupImages = {}; // jobId → [{ mediaType, data, objectUrl, name }]
 const reviseImages = {};   // jobId → [{ mediaType, data, objectUrl, name }]
 
-async function handleFollowupImages(jobId, input) {
-  if (!followupImages[jobId]) followupImages[jobId] = [];
+/** Generic handler for file inputs attached to a job-scoped image store. */
+async function handleJobImages(store, prefix, jobId, input) {
+  if (!store[jobId]) store[jobId] = [];
   for (const file of Array.from(input.files)) {
     try {
       const data = await fileToBase64(file);
-      followupImages[jobId].push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file), name: file.name });
-    } catch { /* skip */ }
+      store[jobId].push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file), name: file.name });
+    } catch { /* skip unreadable files */ }
   }
   input.value = '';
-  renderFollowupPreviews(jobId);
+  renderJobImagePreviews(store, prefix, jobId);
 }
 
-function renderFollowupPreviews(jobId) {
-  const el = document.getElementById('followup-previews-' + jobId);
+function renderJobImagePreviews(store, prefix, jobId) {
+  const el = document.getElementById(`${prefix}-previews-${jobId}`);
   if (!el) return;
-  const files = followupImages[jobId] || [];
-  el.innerHTML = files.map((f, i) => filePreviewHtml(f, `removeFollowupImage('${jobId}',${i})`)).join('');
+  const files = store[jobId] || [];
+  el.innerHTML = files.map((f, i) => filePreviewHtml(f, `remove${prefix[0].toUpperCase()}${prefix.slice(1)}Image('${jobId}',${i})`)).join('');
 }
 
-function removeFollowupImage(jobId, index) {
-  const imgs = followupImages[jobId] || [];
+function removeJobImage(store, prefix, jobId, index) {
+  const imgs = store[jobId] || [];
   URL.revokeObjectURL(imgs[index].objectUrl);
   imgs.splice(index, 1);
-  renderFollowupPreviews(jobId);
+  renderJobImagePreviews(store, prefix, jobId);
 }
 
-async function handleReviseImages(jobId, input) {
-  if (!reviseImages[jobId]) reviseImages[jobId] = [];
-  for (const file of Array.from(input.files)) {
-    try {
-      const data = await fileToBase64(file);
-      reviseImages[jobId].push({ mediaType: file.type, data, objectUrl: URL.createObjectURL(file), name: file.name });
-    } catch { /* skip */ }
-  }
-  input.value = '';
-  renderRevisePreviews(jobId);
-}
-
-function renderRevisePreviews(jobId) {
-  const el = document.getElementById('revise-previews-' + jobId);
-  if (!el) return;
-  const files = reviseImages[jobId] || [];
-  el.innerHTML = files.map((f, i) => filePreviewHtml(f, `removeReviseImage('${jobId}',${i})`)).join('');
-}
-
-function removeReviseImage(jobId, index) {
-  const imgs = reviseImages[jobId] || [];
-  URL.revokeObjectURL(imgs[index].objectUrl);
-  imgs.splice(index, 1);
-  renderRevisePreviews(jobId);
-}
+// Named wrappers — referenced by HTML inline handlers and paste listeners
+async function handleFollowupImages(jobId, input) { await handleJobImages(followupImages, 'followup', jobId, input); }
+async function handleReviseImages(jobId, input) { await handleJobImages(reviseImages, 'revise', jobId, input); }
+function renderFollowupPreviews(jobId) { renderJobImagePreviews(followupImages, 'followup', jobId); }
+function renderRevisePreviews(jobId) { renderJobImagePreviews(reviseImages, 'revise', jobId); }
+function removeFollowupImage(jobId, index) { removeJobImage(followupImages, 'followup', jobId, index); }
+function removeReviseImage(jobId, index) { removeJobImage(reviseImages, 'revise', jobId, index); }
 
 // ── API actions ────────────────────────────────────────────────────────────
 async function selectJob(id) {
@@ -546,16 +533,15 @@ async function selectJob(id) {
 }
 
 async function poll() {
-  const list = await fetch('/jobs').then(r => r.json()).catch(() => []);
+  const list = await fetch('/jobs').then(r => r.json()).catch(err => { console.warn('[poll] failed to fetch job list:', err); return []; });
   const prevSelectedStatus = selectedId && jobs[selectedId] ? jobs[selectedId].status : null;
   list.forEach(j => { if (!jobs[j.id] || jobs[j.id].status !== j.status) jobs[j.id] = j; });
   renderList(list);
   updateCwdSelect(list);
   if (selectedId && jobs[selectedId]) {
-    const activeStatuses = ['pending', 'planning', 'awaiting_approval', 'awaiting_tool_approval', 'awaiting_user_question', 'running'];
     const statusChanged = prevSelectedStatus !== jobs[selectedId].status;
-    if (activeStatuses.includes(jobs[selectedId].status) || statusChanged) {
-      const job = await fetch('/jobs/' + selectedId).then(r => r.json()).catch(() => null);
+    if (ACTIVE_STATUSES.has(jobs[selectedId].status) || statusChanged) {
+      const job = await fetch('/jobs/' + selectedId).then(r => r.json()).catch(err => { console.warn('[poll] failed to fetch job detail:', err); return null; });
       if (job) {
         // If the status changed, the layout shifts (new buttons appear/disappear) — scroll to bottom
         if (jobs[selectedId].status !== job.status) renderDetailFresh = true;
@@ -615,7 +601,7 @@ async function requestChanges(id) {
     (reviseImages[id] || []).forEach(img => URL.revokeObjectURL(img.objectUrl));
     delete reviseImages[id];
     selectedId = id;
-    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
+    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(err => { console.warn('[requestChanges] failed to refresh job:', err); return null; });
     if (refreshed) {
       jobs[id] = refreshed;
       renderDetailFresh = true;
@@ -649,7 +635,7 @@ async function sendFollowUp(id) {
     selectedId = id;
     // Unconditionally refresh the detail view so the user prompt appears immediately,
     // even if the follow-up completes before the next poll() status-change check.
-    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
+    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(err => { console.warn('[sendFollowUp] failed to refresh job:', err); return null; });
     if (refreshed) {
       jobs[id] = refreshed;
       renderDetailFresh = true;

@@ -41,6 +41,56 @@ function makeCanUseTool(id: string) {
   };
 }
 
+/** Handles the SDK's inconsistent session_id vs sessionId casing. */
+function extractSessionId(message: any): string | undefined {
+  return message.session_id ?? message.sessionId;
+}
+
+function handleJobError(id: string, err: unknown): void {
+  store.setError(id, err instanceof Error ? err.message : String(err));
+  store.setStatus(id, "failed");
+}
+
+/**
+ * Drives the `for await` loop over a query stream, handling NDJSON logging,
+ * content block processing, and sessionId capture in one place.
+ * - `collectPlanText`: if true, text blocks are accumulated and returned (used by plan/revise jobs)
+ * - `captureResult`: if true, store.setResult is called on result messages (used by execute jobs)
+ */
+async function runQueryStream(
+  id: string,
+  stream: AsyncIterable<any>,
+  imageCounter: number,
+  opts: { collectPlanText?: boolean; captureResult?: boolean } = {}
+): Promise<string[]> {
+  const planTexts: string[] = [];
+  for await (const message of stream) {
+    const ts = new Date().toISOString();
+    await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
+    if (message.type === "assistant" && message.message?.content) {
+      for (const block of message.message.content) {
+        if ("text" in block) {
+          store.appendLog(id, { type: "text", text: block.text, ts });
+          if (opts.collectPlanText) planTexts.push(block.text);
+        } else if ("name" in block) {
+          store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+        } else if ((block as any).type === "image") {
+          const b = block as any;
+          if (b.source?.type === "base64") {
+            const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
+            store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+          }
+        }
+      }
+    } else if (message.type === "result") {
+      const sessionId = extractSessionId(message);
+      if (sessionId) store.setSessionId(id, sessionId);
+      if (opts.captureResult) store.setResult(id, message.subtype);
+    }
+  }
+  return planTexts;
+}
+
 const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", "ExitPlanMode"];
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "localhost";
@@ -124,48 +174,17 @@ async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string)
 async function planJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
   console.log(`[planJob] id=${id}`);
   store.setStatus(id, "planning");
-  const planTexts: string[] = [];
-  let imageCounter = rawImages.length; // output images start after input image indices
+  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   try {
-    const promptArg = rawImages.length > 0
-      ? makePrompt(prompt, rawImages, id)
-      : prompt;
-    for await (const message of query({
+    const stream = query({
       prompt: promptArg as any,
-      options: {
-        allowedTools: tools,
-        permissionMode: "plan",
-        canUseTool: makeCanUseTool(id),
-        ...(cwd ? { cwd } : {}),
-      },
-    })) {
-      const ts = new Date().toISOString();
-      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
-      if (message.type === "assistant" && message.message?.content) {
-        for (const block of message.message.content) {
-          if ("text" in block) {
-            store.appendLog(id, { type: "text", text: block.text, ts });
-            planTexts.push(block.text);
-          } else if ("name" in block) {
-            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
-          } else if ((block as any).type === "image") {
-            const b = block as any;
-            if (b.source?.type === "base64") {
-              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
-              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
-            }
-          }
-        }
-      } else if (message.type === "result") {
-        const sessionId = (message as any).session_id ?? (message as any).sessionId;
-        if (sessionId) store.setSessionId(id, sessionId);
-      }
-    }
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...(cwd ? { cwd } : {}) },
+    });
+    const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
-    store.setError(id, err instanceof Error ? err.message : String(err));
-    store.setStatus(id, "failed");
+    handleJobError(id, err);
   }
 }
 
@@ -173,134 +192,47 @@ async function revisePlanJob(id: string, feedback: string, sessionId: string, to
   console.log(`[revisePlanJob] id=${id}`);
   store.setStatus(id, "planning");
   store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
-  const planTexts: string[] = [];
-  let imageCounter = 0;
   try {
-    for await (const message of query({
+    const stream = query({
       prompt: feedback,
-      options: {
-        allowedTools: tools,
-        permissionMode: "plan",
-        canUseTool: makeCanUseTool(id),
-        resume: sessionId,
-        ...(cwd ? { cwd } : {}),
-      },
-    })) {
-      const ts = new Date().toISOString();
-      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
-      if (message.type === "assistant" && message.message?.content) {
-        for (const block of message.message.content) {
-          if ("text" in block) {
-            store.appendLog(id, { type: "text", text: block.text, ts });
-            planTexts.push(block.text);
-          } else if ("name" in block) {
-            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
-          } else if ((block as any).type === "image") {
-            const b = block as any;
-            if (b.source?.type === "base64") {
-              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
-              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
-            }
-          }
-        }
-      } else if (message.type === "result") {
-        const newSessionId = (message as any).session_id ?? (message as any).sessionId;
-        if (newSessionId) store.setSessionId(id, newSessionId);
-      }
-    }
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+    });
+    const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
-    store.setError(id, err instanceof Error ? err.message : String(err));
-    store.setStatus(id, "failed");
+    handleJobError(id, err);
   }
 }
 
 async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
   console.log(`[directExecuteJob] id=${id}`);
   store.setStatus(id, "running");
-  let imageCounter = rawImages.length;
+  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   try {
-    const promptArg = rawImages.length > 0
-      ? makePrompt(prompt, rawImages, id)
-      : prompt;
-    for await (const message of query({
+    const stream = query({
       prompt: promptArg as any,
-      options: {
-        permissionMode: "acceptEdits",
-        canUseTool: makeCanUseTool(id),
-        ...(cwd ? { cwd } : {}),
-      },
-    })) {
-      const ts = new Date().toISOString();
-      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
-      if (message.type === "assistant" && message.message?.content) {
-        for (const block of message.message.content) {
-          if ("text" in block) {
-            store.appendLog(id, { type: "text", text: block.text, ts });
-          } else if ("name" in block) {
-            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
-          } else if ((block as any).type === "image") {
-            const b = block as any;
-            if (b.source?.type === "base64") {
-              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
-              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
-            }
-          }
-        }
-      } else if (message.type === "result") {
-        const sessionId = (message as any).session_id ?? (message as any).sessionId;
-        if (sessionId) store.setSessionId(id, sessionId);
-        store.setResult(id, message.subtype);
-      }
-    }
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), ...(cwd ? { cwd } : {}) },
+    });
+    await runQueryStream(id, stream, rawImages.length, { captureResult: true });
     store.setStatus(id, "completed");
   } catch (err) {
-    store.setError(id, err instanceof Error ? err.message : String(err));
-    store.setStatus(id, "failed");
+    handleJobError(id, err);
   }
 }
 
 async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
   console.log(`[executeJob] id=${id}`);
   store.setStatus(id, "running");
-  let imageCounter = 0;
   try {
-    for await (const message of query({
+    const stream = query({
       prompt: "The plan has been approved. Please proceed with execution.",
-      options: {
-        permissionMode: "acceptEdits",
-        canUseTool: makeCanUseTool(id),
-        resume: sessionId,
-        ...(cwd ? { cwd } : {}),
-      },
-    })) {
-      const ts = new Date().toISOString();
-      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
-      if (message.type === "assistant" && message.message?.content) {
-        for (const block of message.message.content) {
-          if ("text" in block) {
-            store.appendLog(id, { type: "text", text: block.text, ts });
-          } else if ("name" in block) {
-            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
-          } else if ((block as any).type === "image") {
-            const b = block as any;
-            if (b.source?.type === "base64") {
-              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
-              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
-            }
-          }
-        }
-      } else if (message.type === "result") {
-        const sessionId = (message as any).session_id ?? (message as any).sessionId;
-        if (sessionId) store.setSessionId(id, sessionId);
-        store.setResult(id, message.subtype);
-      }
-    }
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+    });
+    await runQueryStream(id, stream, 0, { captureResult: true });
     store.setStatus(id, "completed");
   } catch (err) {
-    store.setError(id, err instanceof Error ? err.message : String(err));
-    store.setStatus(id, "failed");
+    handleJobError(id, err);
   }
 }
 
@@ -309,46 +241,18 @@ async function followUpJob(id: string, prompt: string, sessionId: string, tools:
   store.setStatus(id, "running");
   store.clearResult(id);
   store.appendLog(id, { type: "user", text: prompt, ts: new Date().toISOString() });
-  let imageCounter = 0;
+  const promptArg = rawImages.length > 0
+    ? makePrompt(prompt, rawImages, `${id}-followup-${Date.now()}`)
+    : prompt;
   try {
-    const promptArg = rawImages.length > 0
-      ? makePrompt(prompt, rawImages, `${id}-followup-${Date.now()}`)
-      : prompt;
-    for await (const message of query({
+    const stream = query({
       prompt: promptArg as any,
-      options: {
-        permissionMode: "acceptEdits",
-        canUseTool: makeCanUseTool(id),
-        resume: sessionId,
-        ...(cwd ? { cwd } : {}),
-      },
-    })) {
-      const ts = new Date().toISOString();
-      await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
-      if (message.type === "assistant" && message.message?.content) {
-        for (const block of message.message.content) {
-          if ("text" in block) {
-            store.appendLog(id, { type: "text", text: block.text, ts });
-          } else if ("name" in block) {
-            store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
-          } else if ((block as any).type === "image") {
-            const b = block as any;
-            if (b.source?.type === "base64") {
-              const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
-              store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
-            }
-          }
-        }
-      } else if (message.type === "result") {
-        const newSessionId = (message as any).session_id ?? (message as any).sessionId;
-        if (newSessionId) store.setSessionId(id, newSessionId);
-        store.setResult(id, message.subtype);
-      }
-    }
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
+    });
+    await runQueryStream(id, stream, 0, { captureResult: true });
     store.setStatus(id, "completed");
   } catch (err) {
-    store.setError(id, err instanceof Error ? err.message : String(err));
-    store.setStatus(id, "failed");
+    handleJobError(id, err);
   }
 }
 

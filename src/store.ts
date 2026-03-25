@@ -52,7 +52,7 @@ export function getJob(id: string): Job | undefined {
 
 export function setStatus(id: string, status: JobStatus): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] setStatus: job not found: ${id}`); return; }
   job.status = status;
   if (status === "running") job.startedAt = new Date().toISOString();
   if (status === "completed" || status === "failed") job.finishedAt = new Date().toISOString();
@@ -61,56 +61,56 @@ export function setStatus(id: string, status: JobStatus): void {
 
 export function appendLog(id: string, entry: LogEntry): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] appendLog: job not found: ${id}`); return; }
   job.log.push(entry);
   persistJob(job);
 }
 
 export function setPlan(id: string, plan: string): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] setPlan: job not found: ${id}`); return; }
   job.plan = plan;
   persistJob(job);
 }
 
 export function setSessionId(id: string, sessionId: string): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] setSessionId: job not found: ${id}`); return; }
   job.sessionId = sessionId;
   persistJob(job);
 }
 
 export function setResult(id: string, result: string): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] setResult: job not found: ${id}`); return; }
   job.result = result;
   persistJob(job);
 }
 
 export function setError(id: string, error: string): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] setError: job not found: ${id}`); return; }
   job.error = error;
   persistJob(job);
 }
 
 export function setPendingTool(id: string, name: string, input: Record<string, unknown>): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] setPendingTool: job not found: ${id}`); return; }
   job.pendingTool = { name, input };
   persistJob(job);
 }
 
 export function clearPendingTool(id: string): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] clearPendingTool: job not found: ${id}`); return; }
   job.pendingTool = null;
   persistJob(job);
 }
 
 export function clearResult(id: string): void {
   const job = jobs.get(id);
-  if (!job) return;
+  if (!job) { console.warn(`[store] clearResult: job not found: ${id}`); return; }
   job.result = null;
   job.error = null;
   persistJob(job);
