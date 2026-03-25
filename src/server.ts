@@ -30,6 +30,7 @@ function makeCanUseTool(id: string) {
       return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
     }
     store.setPendingTool(id, toolName, input as Record<string, unknown>);
+    console.log(`[canUseTool] id=${id} tool=${toolName} → awaiting approval`);
     if (toolName === "AskUserQuestion") {
       store.setStatus(id, "awaiting_user_question");
     } else {
@@ -455,6 +456,7 @@ Bun.serve({
       const pending = pendingToolApprovals.get(id);
       if (!pending) return jsonError(500, "No pending tool approval resolver found");
       const approvedInput = job.pendingTool?.input ?? {};
+      console.log(`[approve-tool] id=${id} tool=${job.pendingTool?.name} → granted`);
       store.clearPendingTool(id);
       store.setStatus(id, "running");
       pendingToolApprovals.delete(id);
