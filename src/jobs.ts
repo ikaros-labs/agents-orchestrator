@@ -299,7 +299,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   store.setStatus(id, "running");
   try {
     const stream = query({
-      prompt: "The plan has been approved. Please proceed with execution.",
+      prompt: "The plan has been approved. Proceed with execution now.",
       options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), resume: sessionId, ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
