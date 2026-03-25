@@ -43,9 +43,26 @@ export const MEDIA_TYPE_EXT: Record<string, string> = {
 
 export const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", "ExitPlanMode"];
 
+const WORKTREE_SYSTEM_PROMPT_APPEND = `
+You are running inside a git worktree that has already been set up for you.
+- Do NOT create a new branch or a new worktree.
+- After completing your changes, consider whether a pull request should be opened via the GitHub CLI (\`gh pr create\`) and do so if appropriate.
+`;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface RawImage { mediaType: string; data: string }
+
+function worktreeSystemPrompt(inWorktree: boolean) {
+  if (!inWorktree) return {};
+  return {
+    systemPrompt: {
+      type: "preset" as const,
+      preset: "claude_code" as const,
+      append: WORKTREE_SYSTEM_PROMPT_APPEND,
+    },
+  };
+}
 
 // ── Tool approval map ────────────────────────────────────────────────────────
 // When Claude wants to use a tool during execution, canUseTool stores a
@@ -246,11 +263,12 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
   console.log(`[planJob] id=${id}`);
   store.setStatus(id, "planning");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
+  const inWorktree = !!store.getJob(id)?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     store.setPlan(id, planTexts.join("\n"));
@@ -281,11 +299,12 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
   console.log(`[directExecuteJob] id=${id}`);
   store.setStatus(id, "running");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
+  const inWorktree = !!store.getJob(id)?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
     store.setStatus(id, "completed");
