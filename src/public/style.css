@@ -26,6 +26,7 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .badge-pending { background: #292210; color: #ca8a04; }
 .badge-planning { background: #1a1535; color: #a78bfa; }
 .badge-awaiting_approval { background: #2a1f00; color: #fb923c; }
+.badge-awaiting_tool_approval { background: #1a1035; color: #c084fc; }
 .badge-running { background: #0d2035; color: #38bdf8; }
 .badge-completed { background: #0d2218; color: #22c55e; }
 .badge-failed { background: #2a0d0d; color: #ef4444; }
@@ -44,6 +45,17 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .result-error { background: #2a0d0d; border: 1px solid #7f1d1d; color: #f87171; }
 .spinner { display: inline-block; width: 8px; height: 8px; border: 2px solid #38bdf8; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* ── Tool approval bar ──────────────────────────────────────────────────────── */
+.tool-approval-bar { display: flex; flex-direction: column; gap: 10px; padding: 12px 20px; border-top: 1px solid #2a2a2a; background: #0e0b1a; flex-shrink: 0; }
+.tool-approval-header { display: flex; align-items: center; gap: 10px; }
+.tool-approval-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #7c3aed; }
+.tool-approval-name { font-size: 13px; font-family: monospace; font-weight: 700; color: #c084fc; background: #1a1035; border: 1px solid #3b1d6e; border-radius: 4px; padding: 2px 8px; }
+.tool-input-detail { display: flex; flex-direction: column; gap: 4px; background: #0b0b14; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px 12px; overflow-x: auto; }
+.tool-input-row { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; font-family: monospace; line-height: 1.5; }
+.tool-input-key { color: #7c3aed; font-weight: 600; flex-shrink: 0; min-width: 80px; }
+.tool-input-val { color: #d1d5db; white-space: pre-wrap; word-break: break-all; }
+.tool-approval-actions { display: flex; gap: 10px; }
+
 .approve-bar { display: flex; flex-direction: column; gap: 10px; padding: 12px 20px; border-top: 1px solid #2a2a2a; flex-shrink: 0; }
 .approve-actions { display: flex; gap: 10px; }
 .btn-approve { background: #166534; color: #4ade80; border: 1px solid #166534; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; }

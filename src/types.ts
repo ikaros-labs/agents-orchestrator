@@ -1,4 +1,4 @@
-export type JobStatus = "pending" | "planning" | "awaiting_approval" | "running" | "completed" | "failed";
+export type JobStatus = "pending" | "planning" | "awaiting_approval" | "awaiting_tool_approval" | "running" | "completed" | "failed";
 
 export type JobMode = "auto" | "plan" | "edit";
 
@@ -29,4 +29,5 @@ export interface Job {
   result: string | null;
   error: string | null;
   images: InputFile[];
+  pendingTool: { name: string; input: Record<string, unknown> } | null;
 }

@@ -71,8 +71,13 @@ function relTime(iso) {
 }
 
 function badge(status) {
-  const label = status === 'awaiting_approval' ? 'needs approval' : status;
-  const spinner = (status === 'running' || status === 'planning') ? '<span class="spinner"></span>' : '';
+  const labels = {
+    awaiting_approval: 'needs approval',
+    awaiting_tool_approval: 'tool approval',
+  };
+  const label = labels[status] ?? status;
+  const spinnerStatuses = new Set(['running', 'planning', 'awaiting_tool_approval']);
+  const spinner = spinnerStatuses.has(status) ? '<span class="spinner"></span>' : '';
   return `<span class="badge badge-${status}">${spinner}${label}</span>`;
 }
 
@@ -177,6 +182,27 @@ function renderDetail(job) {
         </div>
       </div>`
     : '';
+  const toolApprovalBarHtml = job.status === 'awaiting_tool_approval' && job.pendingTool
+    ? (() => {
+        const tool = job.pendingTool;
+        const inputRows = Object.entries(tool.input || {})
+          .map(([k, v]) => {
+            const val = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+            return `<div class="tool-input-row"><span class="tool-input-key">${escHtml(k)}</span><span class="tool-input-val">${escHtml(val)}</span></div>`;
+          }).join('');
+        return `<div class="tool-approval-bar">
+          <div class="tool-approval-header">
+            <span class="tool-approval-label">Tool request</span>
+            <span class="tool-approval-name">${escHtml(tool.name)}</span>
+          </div>
+          ${inputRows ? `<div class="tool-input-detail">${inputRows}</div>` : ''}
+          <div class="tool-approval-actions">
+            <button class="btn-approve" onclick="approveToolUse('${job.id}')">Approve</button>
+            <button class="btn-reject" onclick="rejectToolUse('${job.id}')">Deny</button>
+          </div>
+        </div>`;
+      })()
+    : '';
   const followupBarHtml = (job.status === 'completed' || job.status === 'failed') && job.sessionId
     ? `<div class="followup-bar">
         <div class="followup-input-row">
@@ -224,6 +250,7 @@ function renderDetail(job) {
     <div class="log-feed" id="log-feed">${logHtml || '<span style="color:#444;font-size:13px">No log entries yet</span>'}</div>
     ${resultHtml}
     ${approveBarHtml}
+    ${toolApprovalBarHtml}
     ${followupBarHtml}
   `;
   const feed = document.getElementById('log-feed');
@@ -340,7 +367,7 @@ async function poll() {
   list.forEach(j => { if (!jobs[j.id] || jobs[j.id].status !== j.status) jobs[j.id] = j; });
   renderList(list);
   if (selectedId && jobs[selectedId]) {
-    const activeStatuses = ['pending', 'planning', 'awaiting_approval', 'running'];
+    const activeStatuses = ['pending', 'planning', 'awaiting_approval', 'awaiting_tool_approval', 'running'];
     const statusChanged = prevSelectedStatus !== jobs[selectedId].status;
     if (activeStatuses.includes(jobs[selectedId].status) || statusChanged) {
       const job = await fetch('/jobs/' + selectedId).then(r => r.json()).catch(() => null);
@@ -352,6 +379,20 @@ async function poll() {
       }
     }
   }
+}
+
+async function approveToolUse(id) {
+  await fetch('/jobs/' + id + '/approve-tool', { method: 'POST' });
+  const job = await fetch('/jobs/' + id).then(r => r.json());
+  jobs[id] = job;
+  renderDetail(job);
+}
+
+async function rejectToolUse(id) {
+  await fetch('/jobs/' + id + '/reject-tool', { method: 'POST' });
+  const job = await fetch('/jobs/' + id).then(r => r.json());
+  jobs[id] = job;
+  renderDetail(job);
 }
 
 async function approveJob(id) {

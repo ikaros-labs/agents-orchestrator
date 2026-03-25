@@ -12,6 +12,26 @@ store.loadStore();
 
 const UI_HTML = await Bun.file(new URL("./public/index.html", import.meta.url)).text();
 
+// ── canUseTool resolver map ──────────────────────────────────────────────────
+// When Claude wants to use a tool during execution, canUseTool stores a
+// Promise resolver here keyed by job ID. The approve/reject endpoints then
+// resolve it with the user's decision, unblocking the agent.
+type ToolDecision =
+  | { behavior: "allow"; updatedInput: unknown }
+  | { behavior: "deny"; message: string };
+
+const pendingToolApprovals = new Map<string, { resolve: (d: ToolDecision) => void }>();
+
+function makeCanUseTool(id: string) {
+  return async (toolName: string, input: unknown): Promise<ToolDecision> => {
+    store.setPendingTool(id, toolName, input as Record<string, unknown>);
+    store.setStatus(id, "awaiting_tool_approval");
+    return new Promise<ToolDecision>((resolve) => {
+      pendingToolApprovals.set(id, { resolve });
+    });
+  };
+}
+
 const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion"];
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "localhost";
@@ -193,8 +213,8 @@ async function directExecuteJob(id: string, prompt: string, tools: string[], cwd
     for await (const message of query({
       prompt: promptArg as any,
       options: {
-        allowedTools: tools,
-        permissionMode: "acceptEdits",
+        permissionMode: "default",
+        canUseTool: makeCanUseTool(id),
         ...(cwd ? { cwd } : {}),
       },
     })) {
@@ -234,8 +254,8 @@ async function executeJob(id: string, sessionId: string, tools: string[], cwd: s
     for await (const message of query({
       prompt: "The plan has been approved. Please proceed with execution.",
       options: {
-        allowedTools: tools,
-        permissionMode: "acceptEdits",
+        permissionMode: "default",
+        canUseTool: makeCanUseTool(id),
         resume: sessionId,
         ...(cwd ? { cwd } : {}),
       },
@@ -281,8 +301,8 @@ async function followUpJob(id: string, prompt: string, sessionId: string, tools:
     for await (const message of query({
       prompt: promptArg as any,
       options: {
-        allowedTools: tools,
-        permissionMode: "acceptEdits",
+        permissionMode: "default",
+        canUseTool: makeCanUseTool(id),
         resume: sessionId,
         ...(cwd ? { cwd } : {}),
       },
@@ -504,6 +524,37 @@ Bun.serve({
       }
       Promise.resolve().then(() => revisePlanJob(id, (b["prompt"] as string).trim(), job.sessionId!, job.tools, job.cwd));
       return json(202, { id, status: "planning" });
+    }
+
+    const approveToolMatch = path.match(/^\/jobs\/([^/]+)\/approve-tool$/);
+    if (req.method === "POST" && approveToolMatch) {
+      const id = approveToolMatch[1]!;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
+      const pending = pendingToolApprovals.get(id);
+      if (!pending) return jsonError(500, "No pending tool approval resolver found");
+      const approvedInput = job.pendingTool?.input ?? {};
+      store.clearPendingTool(id);
+      store.setStatus(id, "running");
+      pendingToolApprovals.delete(id);
+      pending.resolve({ behavior: "allow", updatedInput: approvedInput });
+      return json(202, { id, status: "running" });
+    }
+
+    const rejectToolMatch = path.match(/^\/jobs\/([^/]+)\/reject-tool$/);
+    if (req.method === "POST" && rejectToolMatch) {
+      const id = rejectToolMatch[1]!;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
+      const pending = pendingToolApprovals.get(id);
+      if (!pending) return jsonError(500, "No pending tool approval resolver found");
+      store.clearPendingTool(id);
+      store.setStatus(id, "running");
+      pendingToolApprovals.delete(id);
+      pending.resolve({ behavior: "deny", message: "User denied this tool call" });
+      return json(200, { id, status: "running" });
     }
 
     const followupMatch = path.match(/^\/jobs\/([^/]+)\/followup$/);

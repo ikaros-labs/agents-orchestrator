@@ -39,6 +39,7 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     result: null,
     error: null,
     images,
+    pendingTool: null,
   };
   jobs.set(id, job);
   persistJob(job);
@@ -90,6 +91,20 @@ export function setError(id: string, error: string): void {
   const job = jobs.get(id);
   if (!job) return;
   job.error = error;
+  persistJob(job);
+}
+
+export function setPendingTool(id: string, name: string, input: Record<string, unknown>): void {
+  const job = jobs.get(id);
+  if (!job) return;
+  job.pendingTool = { name, input };
+  persistJob(job);
+}
+
+export function clearPendingTool(id: string): void {
+  const job = jobs.get(id);
+  if (!job) return;
+  job.pendingTool = null;
   persistJob(job);
 }
 
