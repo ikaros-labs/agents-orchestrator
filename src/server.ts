@@ -282,9 +282,7 @@ Bun.serve({
       const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
-      const stoppable = new Set(["pending", "planning", "running", "awaiting_tool_approval", "awaiting_user_question"]);
-      if (!stoppable.has(job.status)) return jsonError(409, "Job cannot be stopped in its current state");
-      jobs.stopJob(id);
+      if (!jobs.stopJob(id)) return Response.json({ id, message: "nothing to stop" });
       return Response.json({ id, status: "stopped" });
     },
 

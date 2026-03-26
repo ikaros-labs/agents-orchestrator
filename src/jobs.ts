@@ -106,11 +106,10 @@ export function resolveToolApproval(id: string, toolUseID: string, result: Permi
  * and marks the job as failed. Safe to call from any active status.
  */
 export function stopJob(id: string): boolean {
-  const job = store.getJob(id);
-  if (!job) return false;
-
-  // Reject all stalled canUseTool promises so the runner isn't left blocked
   const jobApprovals = pendingToolApprovals.get(id);
+  const controller = activeControllers.get(id);
+  if (!controller && !jobApprovals?.size) return false;
+
   if (jobApprovals) {
     for (const { resolve } of jobApprovals.values()) {
       resolve({ behavior: "deny", message: "Job stopped by user" });
@@ -119,8 +118,6 @@ export function stopJob(id: string): boolean {
     pendingToolApprovals.delete(id);
   }
 
-  // Abort the active SDK query (no-op if already done)
-  const controller = activeControllers.get(id);
   if (controller) {
     controller.abort();
     activeControllers.delete(id);
