@@ -349,7 +349,13 @@ function renderDetail(job) {
   const finished = job.finishedAt ? new Date(job.finishedAt).toLocaleTimeString() : '—';
   const logHtml = job.log.map(renderLogEntry).join('');
   const initialEntryHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`;
-  const feedHtml = initialEntryHtml + logHtml;
+  const planHtml = job.plan
+    ? `<div class="log-plan">
+         <div class="log-plan-label">Plan</div>
+         <div class="markdown-body">${md(job.plan)}</div>
+       </div>`
+    : '';
+  const feedHtml = initialEntryHtml + logHtml + planHtml;
   const resultHtml = job.result
     ? `<div class="result-box result-success markdown-body">${md(job.result)}</div>`
     : job.error
