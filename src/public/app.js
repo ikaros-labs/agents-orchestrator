@@ -129,6 +129,10 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function md(text) {
+  return DOMPurify.sanitize(marked.parse(String(text)));
+}
+
 // ── Job list ───────────────────────────────────────────────────────────────
 function renderList(list) {
   const el = document.getElementById('job-list');
@@ -162,7 +166,7 @@ function renderLogEntry(e) {
     return `<div class="log-user">${escHtml(e.text)}</div>`;
   }
   if (e.type === 'text') {
-    return `<div class="log-text">${escHtml(e.text)}</div>`;
+    return `<div class="log-text markdown-body">${md(e.text)}</div>`;
   }
   if (e.type === 'tool_call') {
     return `<div class="log-tool">${escHtml(e.name)}${toolDetail(e.name, e.input)}</div>`;
@@ -232,7 +236,7 @@ function renderQuestionBar(job) {
 
     return `<div class="question-item">
       ${q.header ? `<span class="question-header-chip">${escHtml(q.header)}</span>` : ''}
-      <div class="question-text">${escHtml(q.question)}</div>
+      <div class="question-text markdown-body">${md(q.question)}</div>
       <div class="question-options">
         ${optionsHtml}
         ${otherHtml}
@@ -347,9 +351,9 @@ function renderDetail(job) {
   const initialEntryHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`;
   const feedHtml = initialEntryHtml + logHtml;
   const resultHtml = job.result
-    ? `<div class="result-box result-success">Result: ${escHtml(job.result)}</div>`
+    ? `<div class="result-box result-success markdown-body">${md(job.result)}</div>`
     : job.error
-    ? `<div class="result-box result-error">Error: ${escHtml(job.error)}</div>`
+    ? `<div class="result-box result-error">${escHtml(job.error)}</div>`
     : '';
   const approveBarHtml = job.status === 'awaiting_approval'
     ? `<div class="approve-bar">
