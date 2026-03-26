@@ -308,7 +308,8 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     if (controller.signal.aborted) return;
-    store.setPlan(id, planTexts.join("\n"));
+    const exitEntry = store.getJob(id)?.log.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
+    store.setPlan(id, (exitEntry as any)?.input?.plan || planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
     if (controller.signal.aborted) return;
@@ -332,7 +333,8 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     if (controller.signal.aborted) return;
-    store.setPlan(id, planTexts.join("\n"));
+    const exitEntry = store.getJob(id)?.log.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
+    store.setPlan(id, (exitEntry as any)?.input?.plan || planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
     if (controller.signal.aborted) return;

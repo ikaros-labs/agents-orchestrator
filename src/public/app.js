@@ -353,6 +353,12 @@ function renderDetail(job) {
   const finished = job.finishedAt ? new Date(job.finishedAt).toLocaleTimeString() : '—';
   const logHtml = job.log.map(e => renderLogEntry(e, job.worktreePath ?? job.cwd)).join('');
   const initialEntryHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`;
+  const planCardHtml = (job.status === 'awaiting_approval' && job.plan)
+    ? `<div class="plan-card">
+        <div class="plan-card-header">Plan</div>
+        <div class="plan-card-body markdown-body">${md(job.plan)}</div>
+      </div>`
+    : '';
   const feedHtml = initialEntryHtml + logHtml;
   const resultHtml = job.result
     ? `<div class="result-box result-success markdown-body">${md(job.result)}</div>`
@@ -456,6 +462,7 @@ function renderDetail(job) {
       </div>
     </div>
     <div class="log-feed" id="log-feed">${feedHtml}</div>
+    ${planCardHtml}
     ${resultHtml}
     ${questionBarHtml}
     ${approveBarHtml}

@@ -61,12 +61,12 @@ Bun.serve({
 
     "/style.css": () =>
       new Response(Bun.file(new URL("./public/style.css", import.meta.url)), {
-        headers: { "Content-Type": "text/css" },
+        headers: { "Content-Type": "text/css", "Cache-Control": "no-store" },
       }),
 
     "/app.js": () =>
       new Response(Bun.file(new URL("./public/app.js", import.meta.url)), {
-        headers: { "Content-Type": "text/javascript" },
+        headers: { "Content-Type": "text/javascript", "Cache-Control": "no-store" },
       }),
 
     // ── Saved images / documents ───────────────────────────────────────────
