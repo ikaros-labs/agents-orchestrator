@@ -430,8 +430,8 @@ function renderDetail(job) {
     _scrollWasAtBottom = (_oldScrollHeight - _oldFeed.clientHeight - _oldScrollTop) <= 80;
   }
 
-  const STOPPABLE = new Set(['pending', 'planning', 'running', 'awaiting_tool_approval', 'awaiting_user_question']);
-  const stopBtnHtml = STOPPABLE.has(job.status)
+  const NOT_STOPPABLE = new Set(['awaiting_approval', 'completed', 'failed']);
+  const stopBtnHtml = !NOT_STOPPABLE.has(job.status)
     ? `<button class="btn-stop" onclick="stopJob('${job.id}')">Stop</button>`
     : '';
   document.getElementById('detail').innerHTML = `

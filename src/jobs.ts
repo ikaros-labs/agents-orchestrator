@@ -314,14 +314,14 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
       options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
 
@@ -338,14 +338,14 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
       options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
 
@@ -363,13 +363,13 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
       options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     store.setStatus(id, "completed");
   } catch (err) {
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
 
@@ -385,13 +385,13 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
       options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     store.setStatus(id, "completed");
   } catch (err) {
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
 
@@ -412,12 +412,12 @@ export async function followUpJob(id: string, prompt: string, sessionId: string,
       options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     store.setStatus(id, "completed");
   } catch (err) {
-    activeControllers.delete(id);
     if (store.getJob(id)?.status === "failed") return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
