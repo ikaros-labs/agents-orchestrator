@@ -26,6 +26,11 @@ export interface InputFile {
   filename: string;
 }
 
+export interface JobUsage {
+  totalTokens: number;
+  costUSD: number;
+}
+
 export interface Job {
   id: string;
   status: JobStatus;
@@ -46,4 +51,5 @@ export interface Job {
   images: InputFile[];
   pendingTools: Array<{ toolUseID: string; name: string; input: Record<string, unknown>; agentID?: string }>;
   archived: boolean;
+  usage: JobUsage | null;
 }
