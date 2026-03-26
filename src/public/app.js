@@ -158,7 +158,8 @@ function toolDetail(name, input, cwd) {
   if (name === 'Glob') detail = input.pattern ?? '';
   else if (name === 'Bash') detail = input.description || (input.command ? String(input.command).slice(0, 80) : '');
   else detail = Object.values(input).find(v => typeof v === 'string') ?? '';
-  if (detail && cwd && detail.startsWith(cwd)) {
+  const cwdTools = new Set(['Read', 'Edit', 'Write', 'MultiEdit']);
+  if (detail && cwd && cwdTools.has(name) && detail.startsWith(cwd)) {
     detail = '.' + detail.slice(cwd.length);
   }
   return detail ? ` <span style="opacity:0.6;font-weight:400">${escHtml(String(detail))}</span>` : '';
