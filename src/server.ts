@@ -276,13 +276,23 @@ Bun.serve({
       return Response.json({ id, status: "running" }, { status: 202 });
     },
 
+    // ── Stop ───────────────────────────────────────────────────────────────
+
+    "/jobs/:id/stop": (req) => {
+      const { id } = req.params;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      if (!jobs.stopJob(id)) return Response.json({ id, message: "nothing to stop" });
+      return Response.json({ id, status: "stopped" });
+    },
+
     // ── Follow-up ──────────────────────────────────────────────────────────
 
     "/jobs/:id/followup": async (req) => {
       const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
-      if (job.status !== "completed" && job.status !== "failed") return jsonError(409, "Job is not completed");
+      if (job.status !== "completed" && job.status !== "failed" && job.status !== "stopped") return jsonError(409, "Job is not completed");
       if (!job.sessionId) return jsonError(500, "No session ID available for follow-up");
       const parsed = await parseBody(req, FollowUpSchema);
       if (parsed instanceof Response) return parsed;

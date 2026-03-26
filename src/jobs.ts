@@ -1,5 +1,10 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+
+// ── Active job AbortControllers ──────────────────────────────────────────────
+// One AbortController per running job. Used by stopJob() to cancel the SDK query.
+
+const activeControllers = new Map<string, AbortController>();
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -93,6 +98,32 @@ export function resolveToolApproval(id: string, toolUseID: string, result: Permi
   jobApprovals!.delete(toolUseID);
   if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
   pending.resolve(result);
+  return true;
+}
+
+/**
+ * Stops a running job: aborts its SDK query, rejects any pending tool approvals,
+ * and marks the job as failed. Safe to call from any active status.
+ */
+export function stopJob(id: string): boolean {
+  const jobApprovals = pendingToolApprovals.get(id);
+  const controller = activeControllers.get(id);
+  if (!controller && !jobApprovals?.size) return false;
+
+  if (jobApprovals) {
+    for (const { resolve } of jobApprovals.values()) {
+      resolve({ behavior: "deny", message: "Job stopped by user" });
+    }
+    jobApprovals.clear();
+    pendingToolApprovals.delete(id);
+  }
+
+  if (controller) {
+    controller.abort();
+    activeControllers.delete(id);
+  }
+
+  store.setStatus(id, "stopped");
   return true;
 }
 
@@ -271,16 +302,22 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
   store.setStatus(id, "planning");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
+  const controller = new AbortController();
+  activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
+    if (controller.signal.aborted) return;
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
 
@@ -289,16 +326,22 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
   store.setStatus(id, "planning");
   store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
   const inWorktree = !!store.getJob(id)?.worktreePath;
+  const controller = new AbortController();
+  activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: feedback,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
+    if (controller.signal.aborted) return;
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
 
@@ -308,15 +351,21 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
   const inWorktree = !!store.getJob(id)?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
+  const controller = new AbortController();
+  activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
+    if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
   } catch (err) {
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
 
@@ -324,15 +373,21 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   console.log(`[executeJob] id=${id}`);
   store.setStatus(id, "running");
   const inWorktree = !!store.getJob(id)?.worktreePath;
+  const controller = new AbortController();
+  activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
+    if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
   } catch (err) {
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }
 
@@ -345,14 +400,20 @@ export async function followUpJob(id: string, prompt: string, sessionId: string,
     ? makePrompt(prompt, rawImages, `${id}-followup-${Date.now()}`)
     : prompt;
   const inWorktree = !!store.getJob(id)?.worktreePath;
+  const controller = new AbortController();
+  activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
+    if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
   } catch (err) {
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
   }
 }

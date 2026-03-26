@@ -36,6 +36,7 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .badge-running { background: #0d2035; color: #38bdf8; }
 .badge-completed { background: #0d2218; color: #22c55e; }
 .badge-failed { background: #2a0d0d; color: #ef4444; }
+.badge-stopped { background: #1a1a1a; color: #888; }
 .detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .detail-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #444; font-size: 14px; }
 .detail-header { padding: 14px 20px; border-bottom: 1px solid #2a2a2a; }
@@ -93,6 +94,8 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .btn-approve:hover { background: #15803d; }
 .btn-reject { background: transparent; color: #ef4444; border: 1px solid #7f1d1d; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-reject:hover { background: #2a0d0d; }
+.btn-stop { background: transparent; color: #ef4444; border: 1px solid #7f1d1d; border-radius: 6px; padding: 4px 12px; font-size: 11px; font-weight: 600; cursor: pointer; margin-left: auto; }
+.btn-stop:hover { background: #2a0d0d; }
 .approve-revise { display: flex; flex-direction: column; gap: 6px; }
 .followup-bar { display: flex; flex-direction: column; gap: 6px; padding: 12px 20px; border-top: 1px solid #2a2a2a; flex-shrink: 0; }
 .followup-input-row { display: flex; }
