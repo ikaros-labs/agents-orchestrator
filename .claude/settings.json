@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(./server.sh*)",
+      "Bash(gh:*)"
     ]
   }
 }
