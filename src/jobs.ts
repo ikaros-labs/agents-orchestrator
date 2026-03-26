@@ -156,10 +156,6 @@ function makeCanUseTool(id: string): CanUseTool {
   };
 }
 
-/** Handles the SDK's inconsistent session_id vs sessionId casing. */
-function extractSessionId(message: any): string | undefined {
-  return message.session_id ?? message.sessionId;
-}
 
 function handleJobError(id: string, err: unknown): void {
   store.setError(id, err instanceof Error ? err.message : String(err));
@@ -208,11 +204,9 @@ async function runQueryStream(
         }
       }
     } else if (message.type === "system" && message.subtype === "init") {
-      const sessionId = extractSessionId(message);
+      const sessionId = message.session_id ?? message.sessionId;
       if (sessionId) store.setSessionId(id, sessionId);
     } else if (message.type === "result") {
-      const sessionId = extractSessionId(message);
-      if (sessionId) store.setSessionId(id, sessionId);
       if (opts.captureResult) store.setResult(id, message.subtype);
     }
   }
