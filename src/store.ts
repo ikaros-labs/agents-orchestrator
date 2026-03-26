@@ -45,10 +45,7 @@ function persistJob(job: Job): void {
   writeFileSync(`${DATA_DIR}/${job.id}.json`, JSON.stringify(job, null, 2));
 }
 
-const IN_PROGRESS_STATUSES = new Set<JobStatus>([
-  "pending", "planning", "running",
-  "awaiting_approval", "awaiting_tool_approval", "awaiting_user_question",
-]);
+const TERMINAL_STATUSES = new Set<JobStatus>(["completed", "failed", "stopped"]);
 
 export function loadStore(): void {
   for (const file of readdirSync(DATA_DIR)) {
@@ -73,7 +70,7 @@ export function loadStore(): void {
   // the user can resume via the follow-up bar.
   const restartTs = new Date().toISOString();
   for (const [, job] of jobs) {
-    if (!IN_PROGRESS_STATUSES.has(job.status)) continue;
+    if (TERMINAL_STATUSES.has(job.status)) continue;
     job.status = "stopped";
     job.finishedAt = restartTs;
     job.pendingTools = [];
