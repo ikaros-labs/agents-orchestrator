@@ -78,6 +78,7 @@ function badge(status) {
     awaiting_approval: 'needs approval',
     awaiting_tool_approval: 'tool approval',
     awaiting_user_question: 'question',
+    stopped: 'stopped',
   };
   const label = labels[status] ?? status;
   const spinner = SPINNER_STATUSES.has(status) ? '<span class="spinner"></span>' : '';
@@ -398,7 +399,7 @@ function renderDetail(job) {
         </div>`;
       }).join('')
     : '';
-  const followupBarHtml = (job.status === 'completed' || job.status === 'failed') && job.sessionId
+  const followupBarHtml = (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped') && job.sessionId
     ? `<div class="followup-bar">
         <div class="followup-input-row">
           <textarea id="followup-prompt-${job.id}" placeholder="Ask a follow-up question..." rows="2"></textarea>
@@ -430,7 +431,7 @@ function renderDetail(job) {
     _scrollWasAtBottom = (_oldScrollHeight - _oldFeed.clientHeight - _oldScrollTop) <= 80;
   }
 
-  const NOT_STOPPABLE = new Set(['awaiting_approval', 'completed', 'failed']);
+  const NOT_STOPPABLE = new Set(['awaiting_approval', 'completed', 'failed', 'stopped']);
   const stopBtnHtml = !NOT_STOPPABLE.has(job.status)
     ? `<button class="btn-stop" onclick="stopJob('${job.id}')">Stop</button>`
     : '';

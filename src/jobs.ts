@@ -126,8 +126,7 @@ export function stopJob(id: string): boolean {
     activeControllers.delete(id);
   }
 
-  store.setError(id, "Stopped by user");
-  store.setStatus(id, "failed");
+  store.setStatus(id, "stopped");
   return true;
 }
 
@@ -314,11 +313,11 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
       options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
@@ -338,11 +337,11 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
       options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
@@ -363,10 +362,10 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
       options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
   } catch (err) {
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
@@ -385,10 +384,10 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
       options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
   } catch (err) {
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
@@ -412,10 +411,10 @@ export async function followUpJob(id: string, prompt: string, sessionId: string,
       options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
   } catch (err) {
-    if (store.getJob(id)?.status === "failed") return;
+    if (controller.signal.aborted) return;
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);

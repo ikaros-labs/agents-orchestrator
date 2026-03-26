@@ -100,7 +100,7 @@ export function setStatus(id: string, status: JobStatus): void {
   if (!job) { console.warn(`[store] setStatus: job not found: ${id}`); return; }
   job.status = status;
   if (status === "running") job.startedAt = new Date().toISOString();
-  if (status === "completed" || status === "failed") job.finishedAt = new Date().toISOString();
+  if (status === "completed" || status === "failed" || status === "stopped") job.finishedAt = new Date().toISOString();
   persistJob(job);
   emitJobStatus(job);
 }

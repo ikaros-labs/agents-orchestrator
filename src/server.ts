@@ -285,7 +285,7 @@ Bun.serve({
       const stoppable = new Set(["pending", "planning", "running", "awaiting_tool_approval", "awaiting_user_question"]);
       if (!stoppable.has(job.status)) return jsonError(409, "Job cannot be stopped in its current state");
       jobs.stopJob(id);
-      return Response.json({ id, status: "failed" });
+      return Response.json({ id, status: "stopped" });
     },
 
     // ── Follow-up ──────────────────────────────────────────────────────────
@@ -294,7 +294,7 @@ Bun.serve({
       const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
-      if (job.status !== "completed" && job.status !== "failed") return jsonError(409, "Job is not completed");
+      if (job.status !== "completed" && job.status !== "failed" && job.status !== "stopped") return jsonError(409, "Job is not completed");
       if (!job.sessionId) return jsonError(500, "No session ID available for follow-up");
       const parsed = await parseBody(req, FollowUpSchema);
       if (parsed instanceof Response) return parsed;
