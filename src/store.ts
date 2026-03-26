@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { InputFile, Job, JobMode, JobStatus, LogEntry } from "./types.ts";
+import type { InputFile, Job, JobMode, JobStatus, JobUsage, LogEntry } from "./types.ts";
 
 const DATA_DIR = join(homedir(), ".agent-orchestrator", "jobs");
 mkdirSync(DATA_DIR, { recursive: true });
@@ -12,7 +12,7 @@ const jobs = new Map<string, Job>();
 
 export type StoreEvent =
   | { type: "job_created"; job: Job }
-  | { type: "job_status"; jobId: string; status: JobStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; sessionId: string | null; pendingTools: Job["pendingTools"]; archived: boolean }
+  | { type: "job_status"; jobId: string; status: JobStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; sessionId: string | null; pendingTools: Job["pendingTools"]; archived: boolean; usage: JobUsage | null }
   | { type: "log_entry"; jobId: string; entry: LogEntry; index: number };
 
 const subscribers = new Set<(e: StoreEvent) => void>();
@@ -39,6 +39,7 @@ function emitJobStatus(job: Job): void {
     sessionId: job.sessionId,
     pendingTools: job.pendingTools,
     archived: job.archived,
+    usage: job.usage,
   });
 }
 
@@ -62,6 +63,8 @@ export function loadStore(): void {
       if (job.worktreePath === undefined) job.worktreePath = null;
       // Migrate jobs created before archive support
       if (job.archived === undefined) job.archived = false;
+      // Migrate jobs created before usage tracking
+      if (job.usage === undefined) job.usage = null;
       jobs.set(job.id, job);
     } catch {
       // skip corrupt files
@@ -107,6 +110,7 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     images,
     pendingTools: [],
     archived: false,
+    usage: null,
   };
   jobs.set(id, job);
   persistJob(job);
@@ -203,6 +207,19 @@ export function setArchived(id: string, archived: boolean): void {
   const job = jobs.get(id);
   if (!job) { console.warn(`[store] setArchived: job not found: ${id}`); return; }
   job.archived = archived;
+  persistJob(job);
+  emitJobStatus(job);
+}
+
+export function addUsage(id: string, delta: JobUsage): void {
+  const job = jobs.get(id);
+  if (!job) { console.warn(`[store] addUsage: job not found: ${id}`); return; }
+  if (job.usage === null) {
+    job.usage = { totalTokens: delta.totalTokens, costUSD: delta.costUSD };
+  } else {
+    job.usage.totalTokens += delta.totalTokens;
+    job.usage.costUSD += delta.costUSD;
+  }
   persistJob(job);
   emitJobStatus(job);
 }
