@@ -58,6 +58,8 @@ CMD="bun run $( $DEV_MODE && echo dev || echo start )"
 echo "Starting server from '$TARGET_DIR' ($CMD)..."
 
 cd "$TARGET_DIR"
+echo "Installing dependencies..."
+bun i
 $CMD > "$LOG_FILE" 2>&1 &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
