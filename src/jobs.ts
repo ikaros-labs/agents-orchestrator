@@ -134,12 +134,8 @@ function makeCanUseTool(id: string): CanUseTool {
     const { toolUseID, agentID } = options;
 
     // Deny ExitPlanMode so the planning query ends cleanly here.
-    // Capture input.plan (the structured plan the agent wrote) before denying.
     // Execution is triggered separately via executeJob() once the user approves the plan.
     if (toolName === "ExitPlanMode") {
-      if (typeof input.plan === "string" && input.plan) {
-        store.setPlan(id, input.plan);
-      }
       return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
     }
 
@@ -310,8 +306,9 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
       prompt: promptArg as any,
       options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
-    await runQueryStream(id, stream, rawImages.length, {});
+    const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     if (controller.signal.aborted) return;
+    store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
     if (controller.signal.aborted) return;
@@ -333,8 +330,9 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
       prompt: feedback,
       options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
-    await runQueryStream(id, stream, 0, {});
+    const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     if (controller.signal.aborted) return;
+    store.setPlan(id, planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   } catch (err) {
     if (controller.signal.aborted) return;
