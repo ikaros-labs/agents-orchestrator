@@ -191,6 +191,100 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .markdown-body a { color: #6b9eff; text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
 .markdown-body hr { border: none; border-top: 1px solid #2a2a2a; margin: 0.8em 0; }
-.markdown-body table { border-collapse: collapse; margin: 0 0 0.6em; font-size: 0.9em; }
+.markdown-body table { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; margin: 0 0 0.6em; font-size: 0.9em; }
 .markdown-body th, .markdown-body td { border: 1px solid #2a2a3a; padding: 5px 10px; }
 .markdown-body th { background: #1a1a2e; color: #a78bfa; font-weight: 600; }
+
+/* Back button hidden on desktop, shown on mobile */
+.mobile-back-btn { display: none; }
+
+/* ── Mobile layout (≤ 768px) ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Single-panel slide navigation */
+  .main {
+    position: relative;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 100%;
+    position: absolute;
+    inset: 0;
+    transform: translateX(0);
+    transition: transform 0.2s ease;
+    z-index: 1;
+    border-right: none;
+  }
+  .detail {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    z-index: 2;
+  }
+  .main.mobile-detail-active .sidebar { transform: translateX(-100%); }
+  .main.mobile-detail-active .detail  { transform: translateX(0); }
+
+  /* Back button */
+  .mobile-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    color: #6b9eff;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 0;
+    cursor: pointer;
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+
+  /* Responsive create-form: stack vertically */
+  .create-form {
+    flex-direction: column;
+  }
+  .form-right {
+    min-width: 0;
+    width: 100%;
+  }
+  .create-form textarea {
+    min-height: 72px;
+  }
+
+  /* Touch-friendly targets */
+  .btn-stop,
+  .btn-archive,
+  .btn-show-archived {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    font-size: 13px;
+  }
+  .mode-btn {
+    min-height: 44px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .btn-approve,
+  .btn-reject,
+  .btn-followup,
+  .btn-answer,
+  #submit-btn {
+    min-height: 44px;
+  }
+  .job-item {
+    padding: 16px;
+  }
+
+  /* Job prompt: allow full width */
+  .job-prompt {
+    max-width: none;
+  }
+
+  /* Plan card: less cramped vertically */
+  .plan-card-body {
+    max-height: 60vh;
+  }
+}

@@ -1,4 +1,11 @@
 let selectedId = null;
+let mobileView = 'sidebar';
+function isMobile() { return window.matchMedia('(max-width: 768px)').matches; }
+function showMobilePanel(view) {
+  mobileView = view;
+  document.querySelector('.main').classList.toggle('mobile-detail-active', view === 'detail');
+}
+function goBack() { showMobilePanel('sidebar'); }
 let jobs = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
 let currentMode = 'auto';
@@ -476,6 +483,7 @@ function renderDetail(job) {
     : `<button class="btn-archive" onclick="archiveJob('${job.id}')">Archive</button>`;
   document.getElementById('detail').innerHTML = `
     <div class="detail-header">
+      <button class="mobile-back-btn" onclick="goBack()">&#8592; Back</button>
       <div class="detail-meta">
         ${badge(job.status)}
         <span>Started: ${started}</span>
@@ -583,6 +591,7 @@ async function selectJob(id) {
   jobs[id] = job;
   renderDetailFresh = true; // fresh view, always scroll to bottom
   renderDetail(job);
+  if (isMobile()) showMobilePanel('detail');
 }
 
 // ── SSE real-time updates ───────────────────────────────────────────────────
@@ -800,7 +809,7 @@ async function submitJob() {
     selectedId = id;
     // Fetch and show the new job immediately; SSE will deliver all subsequent updates
     const job = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
-    if (job) { jobs[id] = job; renderDetailFresh = true; renderDetail(job); }
+    if (job) { jobs[id] = job; renderDetailFresh = true; renderDetail(job); if (isMobile()) showMobilePanel('detail'); }
   } finally {
     btn.disabled = false; btn.textContent = 'Run Agent';
   }
@@ -811,6 +820,17 @@ document.getElementById('prompt').addEventListener('keydown', e => {
 });
 document.getElementById('prompt').addEventListener('paste', async (e) => {
   await handlePastedFiles(e, pendingFiles, renderFilePreviews);
+});
+
+window.addEventListener('resize', () => {
+  const main = document.querySelector('.main');
+  if (!isMobile()) {
+    main.classList.remove('mobile-detail-active');
+  } else if (mobileView === 'detail' && selectedId) {
+    main.classList.add('mobile-detail-active');
+  } else {
+    main.classList.remove('mobile-detail-active');
+  }
 });
 
 initSSE();
