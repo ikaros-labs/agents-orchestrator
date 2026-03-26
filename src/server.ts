@@ -293,11 +293,11 @@ Bun.serve({
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "completed" && job.status !== "failed" && job.status !== "stopped") return jsonError(409, "Job is not completed");
-      if (!job.sessionId) return jsonError(500, "No session ID available for follow-up");
+      if (!job.sessionId && job.status !== "stopped") return jsonError(500, "No session ID available for follow-up");
       const parsed = await parseBody(req, FollowUpSchema);
       if (parsed instanceof Response) return parsed;
       const { prompt, images: rawImages } = parsed.data;
-      Promise.resolve().then(() => jobs.followUpJob(id, prompt, job.sessionId!, job.tools, job.worktreePath ?? job.cwd, rawImages));
+      Promise.resolve().then(() => jobs.followUpJob(id, prompt, job.sessionId, job.tools, job.worktreePath ?? job.cwd, rawImages));
       return Response.json({ id, status: "running" }, { status: 202 });
     },
   },

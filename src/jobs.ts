@@ -378,7 +378,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   try {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...(sessionId ? { resume: sessionId } : {}), abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -391,7 +391,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   }
 }
 
-export async function followUpJob(id: string, prompt: string, sessionId: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+export async function followUpJob(id: string, prompt: string, sessionId: string | null, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
   console.log(`[followUpJob] id=${id}`);
   store.setStatus(id, "running");
   store.clearResult(id);
