@@ -351,7 +351,7 @@ function renderDetail(job) {
   if (!job) { document.getElementById('detail').innerHTML = '<div class="detail-empty">Select a job to see details</div>'; return; }
   const started = job.startedAt ? new Date(job.startedAt).toLocaleTimeString() : '—';
   const finished = job.finishedAt ? new Date(job.finishedAt).toLocaleTimeString() : '—';
-  const logHtml = job.log.map(e => renderLogEntry(e, job.cwd)).join('');
+  const logHtml = job.log.map(e => renderLogEntry(e, job.worktreePath ?? job.cwd)).join('');
   const initialEntryHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`;
   const feedHtml = initialEntryHtml + logHtml;
   const resultHtml = job.result
@@ -572,7 +572,7 @@ function appendLogEntryDOM(entry, jobId) {
   if (jobId !== selectedId) return;
   const feed = document.getElementById('log-feed');
   if (!feed) return;
-  const html = renderLogEntry(entry, jobs[jobId]?.cwd);
+  const html = renderLogEntry(entry, jobs[jobId]?.worktreePath ?? jobs[jobId]?.cwd);
   if (!html) return;
   // Remove the "No log entries yet" placeholder on first real entry
   if (!feed.querySelector('.log-text, .log-user, .log-tool, .log-image')) {
