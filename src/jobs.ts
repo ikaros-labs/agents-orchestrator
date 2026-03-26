@@ -11,6 +11,7 @@ import { promisify } from "node:util";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import * as store from "./store.ts";
+import type { Job } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -271,6 +272,29 @@ async function createWorktree(cwd: string, jobId: string): Promise<string> {
   const branchName = `agent/${jobId}`;
   await execFileAsync("git", ["-C", gitRoot, "worktree", "add", "-b", branchName, worktreePath]);
   return worktreePath;
+}
+
+/**
+ * Removes the git worktree for a job and deletes the associated branch.
+ * Errors are logged but not thrown — archiving must always succeed.
+ */
+export async function removeWorktree(job: Job): Promise<void> {
+  if (!job.worktreePath) return;
+  const { id, worktreePath, cwd } = job;
+  try {
+    await execFileAsync("git", ["worktree", "remove", "--force", worktreePath]);
+    console.log(`[worktree] removed for job ${id}: ${worktreePath}`);
+  } catch (err) {
+    console.warn(`[worktree] failed to remove worktree for job ${id}: ${err}`);
+  }
+  if (cwd) {
+    try {
+      const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+      await execFileAsync("git", ["-C", stdout.trim(), "branch", "-D", `agent/${id}`]);
+    } catch (err) {
+      console.warn(`[worktree] failed to delete branch for job ${id}: ${err}`);
+    }
+  }
 }
 
 /**

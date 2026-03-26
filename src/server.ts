@@ -293,6 +293,7 @@ Bun.serve({
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       store.setArchived(id, true);
+      if (job.worktreePath) jobs.removeWorktree(job);
       return Response.json({ ok: true });
     },
 
