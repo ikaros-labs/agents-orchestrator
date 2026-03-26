@@ -2,6 +2,7 @@ let selectedId = null;
 let jobs = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
 let currentMode = 'auto';
+let showArchived = false;
 
 // ── File attachment state ───────────────────────────────────────────────────
 let pendingFiles = []; // { mediaType, data, objectUrl, name }
@@ -135,10 +136,25 @@ function md(text) {
 
 // ── Job list ───────────────────────────────────────────────────────────────
 function renderList(list) {
+  // Update sidebar header with archive toggle
+  const archivedCount = list.filter(j => j.archived).length;
+  const hdr = document.getElementById('sidebar-header');
+  if (hdr) {
+    hdr.innerHTML = (archivedCount > 0 || showArchived)
+      ? `<button class="btn-show-archived${showArchived ? ' active' : ''}" onclick="toggleShowArchived()">
+           ${showArchived ? 'Hide Archived' : `Archived (${archivedCount})`}
+         </button>`
+      : '';
+  }
+
+  const visible = showArchived ? list : list.filter(j => !j.archived);
   const el = document.getElementById('job-list');
-  if (!list.length) { el.innerHTML = '<div class="job-list-empty">No jobs yet</div>'; return; }
-  el.innerHTML = list.map(j => `
-    <div class="job-item${selectedId === j.id ? ' selected' : ''}" onclick="selectJob('${j.id}')">
+  if (!visible.length) {
+    el.innerHTML = `<div class="job-list-empty">${list.length && !showArchived ? 'No active jobs' : 'No jobs yet'}</div>`;
+    return;
+  }
+  el.innerHTML = visible.map(j => `
+    <div class="job-item${selectedId === j.id ? ' selected' : ''}${j.archived ? ' archived' : ''}" onclick="selectJob('${j.id}')">
       <div class="job-item-top">
         ${badge(j.status)}
         ${j.mode && j.mode !== 'auto' ? `<span class="mode-tag mode-tag-${j.mode}">${j.mode}</span>` : ''}
@@ -149,6 +165,11 @@ function renderList(list) {
       ${j.cwd ? `<div style="font-size:10px;color:#555;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.cwd)}</div>` : ''}
     </div>
   `).join('');
+}
+
+function toggleShowArchived() {
+  showArchived = !showArchived;
+  renderList(getSortedJobs());
 }
 
 // ── Job detail ─────────────────────────────────────────────────────────────
@@ -449,6 +470,9 @@ function renderDetail(job) {
   const stopBtnHtml = !NOT_STOPPABLE.has(job.status)
     ? `<button class="btn-stop" onclick="stopJob('${job.id}')">Stop</button>`
     : '';
+  const archiveBtnHtml = job.archived
+    ? `<button class="btn-archive active" onclick="unarchiveJob('${job.id}')">Unarchive</button>`
+    : `<button class="btn-archive" onclick="archiveJob('${job.id}')">Archive</button>`;
   document.getElementById('detail').innerHTML = `
     <div class="detail-header">
       <div class="detail-meta">
@@ -458,7 +482,7 @@ function renderDetail(job) {
         <span>Tools: ${job.tools.join(', ')}</span>
         ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
         ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
-        ${stopBtnHtml}
+        <div class="detail-actions">${stopBtnHtml}${archiveBtnHtml}</div>
       </div>
     </div>
     <div class="log-feed" id="log-feed">${feedHtml}</div>
@@ -615,14 +639,14 @@ function initSSE() {
     }
   });
 
-  // Job metadata changed: status, result, error, plan, pendingTools, timestamps
+  // Job metadata changed: status, result, error, plan, pendingTools, timestamps, archived
   es.addEventListener('job_status', e => {
     const data = JSON.parse(e.data);
-    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools } = data;
+    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived } = data;
     const job = jobs[jobId];
     if (!job) return;
     const prevStatus = job.status;
-    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools });
+    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived });
     renderList(getSortedJobs());
     if (jobId === selectedId) {
       if (prevStatus !== status) renderDetailFresh = true;
@@ -650,6 +674,16 @@ function initSSE() {
 async function stopJob(id) {
   await fetch('/jobs/' + id + '/stop', { method: 'POST' });
   // SSE job_status event will update the detail panel
+}
+
+async function archiveJob(id) {
+  await fetch('/jobs/' + id + '/archive', { method: 'POST' });
+  // SSE job_status event will update the detail panel and list
+}
+
+async function unarchiveJob(id) {
+  await fetch('/jobs/' + id + '/unarchive', { method: 'POST' });
+  // SSE job_status event will update the detail panel and list
 }
 
 async function approveToolUse(id, toolUseID) {

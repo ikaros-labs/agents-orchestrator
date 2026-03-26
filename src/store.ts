@@ -12,7 +12,7 @@ const jobs = new Map<string, Job>();
 
 export type StoreEvent =
   | { type: "job_created"; job: Job }
-  | { type: "job_status"; jobId: string; status: JobStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; sessionId: string | null; pendingTools: Job["pendingTools"] }
+  | { type: "job_status"; jobId: string; status: JobStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; sessionId: string | null; pendingTools: Job["pendingTools"]; archived: boolean }
   | { type: "log_entry"; jobId: string; entry: LogEntry; index: number };
 
 const subscribers = new Set<(e: StoreEvent) => void>();
@@ -38,6 +38,7 @@ function emitJobStatus(job: Job): void {
     plan: job.plan,
     sessionId: job.sessionId,
     pendingTools: job.pendingTools,
+    archived: job.archived,
   });
 }
 
@@ -59,6 +60,8 @@ export function loadStore(): void {
       // Migrate jobs created before worktree support
       if (job.useWorktree === undefined) job.useWorktree = false;
       if (job.worktreePath === undefined) job.worktreePath = null;
+      // Migrate jobs created before archive support
+      if (job.archived === undefined) job.archived = false;
       jobs.set(job.id, job);
     } catch {
       // skip corrupt files
@@ -103,6 +106,7 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     error: null,
     images,
     pendingTools: [],
+    archived: false,
   };
   jobs.set(id, job);
   persistJob(job);
@@ -191,6 +195,14 @@ export function clearResult(id: string): void {
   if (!job) { console.warn(`[store] clearResult: job not found: ${id}`); return; }
   job.result = null;
   job.error = null;
+  persistJob(job);
+  emitJobStatus(job);
+}
+
+export function setArchived(id: string, archived: boolean): void {
+  const job = jobs.get(id);
+  if (!job) { console.warn(`[store] setArchived: job not found: ${id}`); return; }
+  job.archived = archived;
   persistJob(job);
   emitJobStatus(job);
 }

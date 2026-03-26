@@ -45,4 +45,5 @@ export interface Job {
   error: string | null;
   images: InputFile[];
   pendingTools: Array<{ toolUseID: string; name: string; input: Record<string, unknown>; agentID?: string }>;
+  archived: boolean;
 }
