@@ -355,7 +355,7 @@ function renderDetail(job) {
         <div class="plan-card-body markdown-body">${md(job.plan)}</div>
       </div>`
     : '';
-  const feedHtml = initialEntryHtml + logHtml + planCardHtml;
+  const feedHtml = initialEntryHtml + logHtml;
   const resultHtml = job.result
     ? `<div class="result-box result-success markdown-body">${md(job.result)}</div>`
     : job.error
@@ -458,6 +458,7 @@ function renderDetail(job) {
       </div>
     </div>
     <div class="log-feed" id="log-feed">${feedHtml}</div>
+    ${planCardHtml}
     ${resultHtml}
     ${questionBarHtml}
     ${approveBarHtml}
