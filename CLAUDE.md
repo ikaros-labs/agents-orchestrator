@@ -11,6 +11,8 @@ bun run start # production
 
 Runtime and package manager: **bun**
 
+The server is running at **http://100.81.181.2:6432/**
+
 ### Running across worktrees
 
 Use `server.sh` to start the server. It automatically kills any existing instance first, so you never need to manage multiple servers.
