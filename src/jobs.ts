@@ -209,6 +209,13 @@ async function runQueryStream(
       if (sessionId) store.setSessionId(id, sessionId);
     } else if (message.type === "result") {
       if (opts.captureResult) store.setResult(id, message.subtype);
+      const u = message.usage;
+      if (u) {
+        store.addUsage(id, {
+          totalTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+          costUSD: message.total_cost_usd ?? 0,
+        });
+      }
     }
   }
   return planTexts;

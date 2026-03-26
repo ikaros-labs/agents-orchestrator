@@ -491,6 +491,7 @@ function renderDetail(job) {
         <span>Tools: ${job.tools.join(', ')}</span>
         ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
         ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
+        ${job.usage ? `<span title="Token and cost usage for this job">$${job.usage.costUSD.toFixed(4)} · ${job.usage.totalTokens.toLocaleString()} tokens (${(job.usage.totalTokens / 200000 * 100).toFixed(1)}%)</span>` : ''}
         <div class="detail-actions">${stopBtnHtml}${archiveBtnHtml}</div>
       </div>
     </div>
@@ -652,11 +653,11 @@ function initSSE() {
   // Job metadata changed: status, result, error, plan, pendingTools, timestamps, archived
   es.addEventListener('job_status', e => {
     const data = JSON.parse(e.data);
-    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived } = data;
+    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage } = data;
     const job = jobs[jobId];
     if (!job) return;
     const prevStatus = job.status;
-    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived });
+    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage });
     renderList(getSortedJobs());
     if (jobId === selectedId) {
       if (prevStatus !== status) renderDetailFresh = true;
