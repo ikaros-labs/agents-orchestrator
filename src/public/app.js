@@ -664,6 +664,8 @@ function initSSE() {
     while (job.log.length <= index) job.log.push(null);
     job.log[index] = entry;
     appendLogEntryDOM(entry, jobId);
+    // Re-sort sidebar when a new user message arrives (followup changes sort key)
+    if (entry.type === 'user') renderList(getSortedJobs());
   });
 
   es.onerror = () => {
