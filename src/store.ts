@@ -45,6 +45,8 @@ function persistJob(job: Job): void {
   writeFileSync(`${DATA_DIR}/${job.id}.json`, JSON.stringify(job, null, 2));
 }
 
+const TERMINAL_STATUSES = new Set<JobStatus>(["completed", "failed", "stopped"]);
+
 export function loadStore(): void {
   for (const file of readdirSync(DATA_DIR)) {
     if (!file.endsWith(".json")) continue;
@@ -61,6 +63,23 @@ export function loadStore(): void {
     } catch {
       // skip corrupt files
     }
+  }
+
+  // Stop any jobs that were in-progress when the server last shut down.
+  // Their AbortControllers and SDK streams are gone; mark them stopped so
+  // the user can resume via the follow-up bar.
+  const restartTs = new Date().toISOString();
+  for (const [, job] of jobs) {
+    if (TERMINAL_STATUSES.has(job.status)) continue;
+    job.status = "stopped";
+    job.finishedAt = restartTs;
+    job.pendingTools = [];
+    job.log.push({
+      type: "text",
+      text: "Server restarted — job was stopped. Use the follow-up bar to resume.",
+      ts: restartTs,
+    });
+    persistJob(job);
   }
 }
 
