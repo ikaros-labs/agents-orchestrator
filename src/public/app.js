@@ -3,7 +3,9 @@ let mobileView = 'sidebar';
 function isMobile() { return window.matchMedia('(max-width: 768px)').matches; }
 function showMobilePanel(view) {
   mobileView = view;
-  document.querySelector('.main').classList.toggle('mobile-detail-active', view === 'detail');
+  const isDetail = view === 'detail';
+  document.querySelector('.main').classList.toggle('mobile-detail-active', isDetail);
+  document.body.classList.toggle('mobile-detail-active', isDetail);
 }
 function goBack() { showMobilePanel('sidebar'); }
 let jobs = {};
@@ -825,13 +827,9 @@ document.getElementById('prompt').addEventListener('paste', async (e) => {
 
 window.addEventListener('resize', () => {
   const main = document.querySelector('.main');
-  if (!isMobile()) {
-    main.classList.remove('mobile-detail-active');
-  } else if (mobileView === 'detail' && selectedId) {
-    main.classList.add('mobile-detail-active');
-  } else {
-    main.classList.remove('mobile-detail-active');
-  }
+  const active = isMobile() && mobileView === 'detail' && selectedId;
+  main.classList.toggle('mobile-detail-active', !!active);
+  document.body.classList.toggle('mobile-detail-active', !!active);
 });
 
 initSSE();

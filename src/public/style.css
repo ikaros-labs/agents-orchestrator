@@ -287,4 +287,14 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
   .plan-card-body {
     max-height: 60vh;
   }
+
+  /* Hide create-form when viewing a job detail on mobile */
+  body.mobile-detail-active .create-form {
+    display: none;
+  }
+
+  /* Collapse verbose job header metadata — keep only badge + action buttons */
+  .detail-meta span {
+    display: none;
+  }
 }
