@@ -1,7 +1,9 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import type { InputFile, Job, JobMode, JobStatus, LogEntry } from "./types.ts";
 
-const DATA_DIR = "./data/jobs";
+const DATA_DIR = join(homedir(), ".agent-orchestrator", "jobs");
 mkdirSync(DATA_DIR, { recursive: true });
 
 const jobs = new Map<string, Job>();

@@ -11,9 +11,10 @@ const execFileAsync = promisify(execFile);
 
 // ── Directory constants ──────────────────────────────────────────────────────
 
-export const WORKTREES_DIR = process.env.AGENT_WORKTREES_DIR ?? join(homedir(), ".agent-worktrees");
-export const LOGS_DIR = "./logs";
-export const IMAGES_DIR = "./data/images";
+const AGENT_DIR = join(homedir(), ".agent-orchestrator");
+export const WORKTREES_DIR = process.env.AGENT_WORKTREES_DIR ?? join(AGENT_DIR, "worktrees");
+export const LOGS_DIR = join(AGENT_DIR, "logs");
+export const IMAGES_DIR = join(AGENT_DIR, "files");
 await mkdir(LOGS_DIR, { recursive: true });
 await mkdir(IMAGES_DIR, { recursive: true });
 
