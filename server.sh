@@ -5,7 +5,6 @@
 
 set -e
 
-PORT="${PORT:-3000}"
 PID_FILE="/tmp/agents-orchestrator.pid"
 LOG_FILE="/tmp/agents-orchestrator.log"
 
@@ -16,6 +15,8 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   set +a
 fi
+
+PORT="${PORT:-3000}"
 
 TARGET_DIR=""
 DEV_MODE=false
