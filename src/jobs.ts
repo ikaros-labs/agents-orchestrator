@@ -207,6 +207,9 @@ async function runQueryStream(
           }
         }
       }
+    } else if (message.type === "system" && message.subtype === "init") {
+      const sessionId = extractSessionId(message);
+      if (sessionId) store.setSessionId(id, sessionId);
     } else if (message.type === "result") {
       const sessionId = extractSessionId(message);
       if (sessionId) store.setSessionId(id, sessionId);
