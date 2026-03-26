@@ -286,6 +286,24 @@ Bun.serve({
       return Response.json({ id, status: "stopped" });
     },
 
+    // ── Archive ────────────────────────────────────────────────────────────
+
+    "/jobs/:id/archive": (req) => {
+      const { id } = req.params;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      store.setArchived(id, true);
+      return Response.json({ ok: true });
+    },
+
+    "/jobs/:id/unarchive": (req) => {
+      const { id } = req.params;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      store.setArchived(id, false);
+      return Response.json({ ok: true });
+    },
+
     // ── Follow-up ──────────────────────────────────────────────────────────
 
     "/jobs/:id/followup": async (req) => {
