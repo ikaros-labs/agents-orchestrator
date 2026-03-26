@@ -350,12 +350,12 @@ function renderDetail(job) {
   const logHtml = job.log.map(renderLogEntry).join('');
   const initialEntryHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`;
   const planHtml = job.plan
-    ? `<div class="plan-panel">
-         <div class="plan-panel-label">Plan</div>
-         <div class="plan-panel-body markdown-body">${md(job.plan)}</div>
+    ? `<div class="log-plan">
+         <div class="log-plan-label">Plan</div>
+         <div class="markdown-body">${md(job.plan)}</div>
        </div>`
     : '';
-  const feedHtml = initialEntryHtml + logHtml;
+  const feedHtml = initialEntryHtml + logHtml + planHtml;
   const resultHtml = job.result
     ? `<div class="result-box result-success markdown-body">${md(job.result)}</div>`
     : job.error
@@ -458,7 +458,6 @@ function renderDetail(job) {
       </div>
     </div>
     <div class="log-feed" id="log-feed">${feedHtml}</div>
-    ${planHtml}
     ${resultHtml}
     ${questionBarHtml}
     ${approveBarHtml}
@@ -468,7 +467,12 @@ function renderDetail(job) {
   const feed = document.getElementById('log-feed');
   if (feed) {
     if (renderDetailFresh || _scrollWasAtBottom) {
-      feed.scrollTop = feed.scrollHeight; // auto-scroll to bottom
+      const planEl = feed.querySelector('.log-plan');
+      if (planEl) {
+        feed.scrollTop = planEl.offsetTop; // scroll to show plan from the top
+      } else {
+        feed.scrollTop = feed.scrollHeight; // auto-scroll to bottom
+      }
     } else {
       // Anchor viewport: compensate for new content appended at the bottom
       feed.scrollTop = _oldScrollTop + (feed.scrollHeight - _oldScrollHeight);
