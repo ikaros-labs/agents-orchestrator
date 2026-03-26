@@ -393,8 +393,15 @@ export async function followUpJob(id: string, prompt: string, sessionId: string 
   store.setStatus(id, "running");
   store.clearResult(id);
   store.appendLog(id, { type: "user", text: prompt, ts: new Date().toISOString() });
+  const followupJobId = `${id}-followup-${Date.now()}`;
+  if (rawImages.length > 0) {
+    const urls = await Promise.all(rawImages.map((img, i) => saveImage(followupJobId, i, img.mediaType, img.data)));
+    for (let i = 0; i < rawImages.length; i++) {
+      store.appendLog(id, { type: "image", mediaType: rawImages[i].mediaType, url: urls[i], ts: new Date().toISOString() });
+    }
+  }
   const promptArg = rawImages.length > 0
-    ? makePrompt(prompt, rawImages, `${id}-followup-${Date.now()}`)
+    ? makePrompt(prompt, rawImages, followupJobId)
     : prompt;
   const inWorktree = !!store.getJob(id)?.worktreePath;
   const controller = new AbortController();
