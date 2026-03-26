@@ -469,7 +469,9 @@ function renderDetail(job) {
     if (renderDetailFresh || _scrollWasAtBottom) {
       const planEl = feed.querySelector('.log-plan');
       if (planEl) {
-        feed.scrollTop = planEl.offsetTop; // scroll to show plan from the top
+        // getBoundingClientRect gives viewport-relative positions; combining with current
+        // scrollTop converts to the absolute scrollTop needed to show planEl at feed's top
+        feed.scrollTop = planEl.getBoundingClientRect().top - feed.getBoundingClientRect().top + feed.scrollTop;
       } else {
         feed.scrollTop = feed.scrollHeight; // auto-scroll to bottom
       }
