@@ -16,6 +16,7 @@ export type JobMode = "auto" | "plan" | "edit";
 
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
+  | { type: "plan"; text: string; ts: string }
   | { type: "user"; text: string; ts: string }
   | { type: "tool_call"; name: string; input?: Record<string, unknown>; ts: string }
   | { type: "image"; mediaType: string; url: string; ts: string };

@@ -156,9 +156,74 @@ function toolDetail(name, input) {
   return detail ? ` <span style="opacity:0.6;font-weight:400">${escHtml(String(detail))}</span>` : '';
 }
 
+/** Minimal markdown → HTML renderer for plan blocks. */
+function renderMarkdown(md) {
+  const lines = md.split('\n');
+  const out = [];
+  let inCode = false, codeLang = '', codeLines = [];
+  let inUl = false, inOl = false;
+
+  function flushList() {
+    if (inUl) { out.push('</ul>'); inUl = false; }
+    if (inOl) { out.push('</ol>'); inOl = false; }
+  }
+  function flushCode() {
+    const escaped = codeLines.join('\n').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    out.push(`<pre class="plan-code"><code${codeLang ? ` class="lang-${escHtml(codeLang)}"` : ''}>${escaped}</code></pre>`);
+    codeLines = []; codeLang = '';
+  }
+  function inlineFormat(t) {
+    return t
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code class="plan-inline-code">$1</code>');
+  }
+
+  for (const line of lines) {
+    if (line.startsWith('```')) {
+      if (inCode) { flushCode(); inCode = false; }
+      else { flushList(); inCode = true; codeLang = line.slice(3).trim(); }
+      continue;
+    }
+    if (inCode) { codeLines.push(line); continue; }
+
+    const h3 = line.match(/^### (.+)/);
+    const h2 = line.match(/^## (.+)/);
+    const h1 = line.match(/^# (.+)/);
+    const ul = line.match(/^[-*] (.+)/);
+    const ol = line.match(/^\d+\. (.+)/);
+    const hr = line.match(/^---+$/);
+
+    if (h1) { flushList(); out.push(`<h1 class="plan-h1">${inlineFormat(h1[1])}</h1>`); }
+    else if (h2) { flushList(); out.push(`<h2 class="plan-h2">${inlineFormat(h2[1])}</h2>`); }
+    else if (h3) { flushList(); out.push(`<h3 class="plan-h3">${inlineFormat(h3[1])}</h3>`); }
+    else if (hr) { flushList(); out.push('<hr class="plan-hr">'); }
+    else if (ul) {
+      if (inOl) { out.push('</ol>'); inOl = false; }
+      if (!inUl) { out.push('<ul class="plan-ul">'); inUl = true; }
+      out.push(`<li>${inlineFormat(ul[1])}</li>`);
+    } else if (ol) {
+      if (inUl) { out.push('</ul>'); inUl = false; }
+      if (!inOl) { out.push('<ol class="plan-ol">'); inOl = true; }
+      out.push(`<li>${inlineFormat(ol[1])}</li>`);
+    } else {
+      flushList();
+      if (line.trim() === '') out.push('<div class="plan-spacer"></div>');
+      else out.push(`<p class="plan-p">${inlineFormat(line)}</p>`);
+    }
+  }
+  if (inCode) flushCode();
+  flushList();
+  return out.join('');
+}
+
 function renderLogEntry(e) {
   if (e.type === 'user') {
     return `<div class="log-user">${escHtml(e.text)}</div>`;
+  }
+  if (e.type === 'plan') {
+    return `<div class="log-plan"><div class="log-plan-header"><span class="log-plan-label">Plan</span></div><div class="log-plan-body">${renderMarkdown(e.text)}</div></div>`;
   }
   if (e.type === 'text') {
     return `<div class="log-text">${escHtml(e.text)}</div>`;
@@ -561,7 +626,7 @@ function appendLogEntryDOM(entry, jobId) {
   const html = renderLogEntry(entry);
   if (!html) return;
   // Remove the "No log entries yet" placeholder on first real entry
-  if (!feed.querySelector('.log-text, .log-user, .log-tool, .log-image')) {
+  if (!feed.querySelector('.log-text, .log-plan, .log-user, .log-tool, .log-image')) {
     feed.innerHTML = '';
   }
   const wasAtBottom = (feed.scrollHeight - feed.clientHeight - feed.scrollTop) <= 80;

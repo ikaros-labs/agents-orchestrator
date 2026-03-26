@@ -164,7 +164,7 @@ async function runQueryStream(
     if (message.type === "assistant" && message.message?.content) {
       for (const block of message.message.content) {
         if ("text" in block) {
-          store.appendLog(id, { type: "text", text: block.text, ts });
+          store.appendLog(id, { type: opts.collectPlanText ? "plan" : "text", text: block.text, ts });
           if (opts.collectPlanText) planTexts.push(block.text);
         } else if ("name" in block) {
           store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
