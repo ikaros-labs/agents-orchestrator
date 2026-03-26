@@ -399,7 +399,7 @@ function renderDetail(job) {
         </div>`;
       }).join('')
     : '';
-  const followupBarHtml = (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped') && job.sessionId
+  const followupBarHtml = ((job.status === 'completed' || job.status === 'failed') && job.sessionId) || job.status === 'stopped'
     ? `<div class="followup-bar">
         <div class="followup-input-row">
           <textarea id="followup-prompt-${job.id}" placeholder="Ask a follow-up question..." rows="2"></textarea>

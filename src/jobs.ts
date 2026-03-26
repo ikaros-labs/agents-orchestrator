@@ -156,10 +156,6 @@ function makeCanUseTool(id: string): CanUseTool {
   };
 }
 
-/** Handles the SDK's inconsistent session_id vs sessionId casing. */
-function extractSessionId(message: any): string | undefined {
-  return message.session_id ?? message.sessionId;
-}
 
 function handleJobError(id: string, err: unknown): void {
   store.setError(id, err instanceof Error ? err.message : String(err));
@@ -207,9 +203,10 @@ async function runQueryStream(
           }
         }
       }
-    } else if (message.type === "result") {
-      const sessionId = extractSessionId(message);
+    } else if (message.type === "system" && message.subtype === "init") {
+      const sessionId = message.session_id ?? message.sessionId;
       if (sessionId) store.setSessionId(id, sessionId);
+    } else if (message.type === "result") {
       if (opts.captureResult) store.setResult(id, message.subtype);
     }
   }
@@ -378,7 +375,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   try {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...(sessionId ? { resume: sessionId } : {}), abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -391,7 +388,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   }
 }
 
-export async function followUpJob(id: string, prompt: string, sessionId: string, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+export async function followUpJob(id: string, prompt: string, sessionId: string | null, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
   console.log(`[followUpJob] id=${id}`);
   store.setStatus(id, "running");
   store.clearResult(id);
