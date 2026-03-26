@@ -430,6 +430,10 @@ function renderDetail(job) {
     _scrollWasAtBottom = (_oldScrollHeight - _oldFeed.clientHeight - _oldScrollTop) <= 80;
   }
 
+  const STOPPABLE = new Set(['pending', 'planning', 'running', 'awaiting_tool_approval', 'awaiting_user_question']);
+  const stopBtnHtml = STOPPABLE.has(job.status)
+    ? `<button class="btn-stop" onclick="stopJob('${job.id}')">Stop</button>`
+    : '';
   document.getElementById('detail').innerHTML = `
     <div class="detail-header">
       <div class="detail-meta">
@@ -439,6 +443,7 @@ function renderDetail(job) {
         <span>Tools: ${job.tools.join(', ')}</span>
         ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
         ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
+        ${stopBtnHtml}
       </div>
     </div>
     <div class="log-feed" id="log-feed">${feedHtml}</div>
@@ -624,6 +629,11 @@ function initSSE() {
     // EventSource auto-reconnects; the snapshot event on reconnect re-bootstraps state
     console.warn('[SSE] connection lost, reconnecting…');
   };
+}
+
+async function stopJob(id) {
+  await fetch('/jobs/' + id + '/stop', { method: 'POST' });
+  // SSE job_status event will update the detail panel
 }
 
 async function approveToolUse(id, toolUseID) {

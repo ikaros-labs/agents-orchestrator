@@ -276,6 +276,18 @@ Bun.serve({
       return Response.json({ id, status: "running" }, { status: 202 });
     },
 
+    // ── Stop ───────────────────────────────────────────────────────────────
+
+    "/jobs/:id/stop": (req) => {
+      const { id } = req.params;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      const stoppable = new Set(["pending", "planning", "running", "awaiting_tool_approval", "awaiting_user_question"]);
+      if (!stoppable.has(job.status)) return jsonError(409, "Job cannot be stopped in its current state");
+      jobs.stopJob(id);
+      return Response.json({ id, status: "failed" });
+    },
+
     // ── Follow-up ──────────────────────────────────────────────────────────
 
     "/jobs/:id/followup": async (req) => {
