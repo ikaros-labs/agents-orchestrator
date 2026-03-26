@@ -5,9 +5,18 @@
 
 set -e
 
-PORT="${PORT:-3000}"
 PID_FILE="/tmp/agents-orchestrator.pid"
 LOG_FILE="/tmp/agents-orchestrator.log"
+
+ENV_FILE="/root/agents-orchestrator/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+fi
+
+PORT="${PORT:-3000}"
 
 TARGET_DIR=""
 DEV_MODE=false
