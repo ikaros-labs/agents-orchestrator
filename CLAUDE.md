@@ -11,6 +11,8 @@ bun run start # production
 
 Runtime and package manager: **bun**
 
+If `node_modules` is missing, run `bun install` before starting the server.
+
 ### Running across worktrees
 
 Use `server.sh` to start the server. It automatically kills any existing instance first, so you never need to manage multiple servers.
