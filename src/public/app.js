@@ -194,6 +194,7 @@ function renderLogEntry(e, cwd) {
     return `<div class="log-text markdown-body">${md(e.text)}</div>`;
   }
   if (e.type === 'tool_call') {
+    if (e.name === 'ExitPlanMode') return '';
     return `<div class="log-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
   if (e.type === 'image') {
