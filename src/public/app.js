@@ -349,7 +349,13 @@ function renderDetail(job) {
   const finished = job.finishedAt ? new Date(job.finishedAt).toLocaleTimeString() : '—';
   const logHtml = job.log.map(renderLogEntry).join('');
   const initialEntryHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`;
-  const feedHtml = initialEntryHtml + logHtml;
+  const planCardHtml = (job.status === 'awaiting_approval' && job.plan)
+    ? `<div class="plan-card">
+        <div class="plan-card-header">Plan</div>
+        <div class="plan-card-body markdown-body">${md(job.plan)}</div>
+      </div>`
+    : '';
+  const feedHtml = initialEntryHtml + logHtml + planCardHtml;
   const resultHtml = job.result
     ? `<div class="result-box result-success markdown-body">${md(job.result)}</div>`
     : job.error
