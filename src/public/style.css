@@ -85,7 +85,9 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 .tool-input-row { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; font-family: monospace; line-height: 1.5; }
 .tool-input-key { color: #7c3aed; font-weight: 600; flex-shrink: 0; min-width: 80px; }
 .tool-input-val { color: #d1d5db; white-space: pre-wrap; word-break: break-all; }
-.tool-approval-actions { display: flex; gap: 10px; }
+.tool-approval-actions { display: flex; gap: 10px; align-items: center; }
+.tool-deny-reason { flex: 1; background: #0b0b14; color: #d1d5db; border: 1px solid #2a2a3a; border-radius: 6px; padding: 7px 10px; font-size: 12px; outline: none; }
+.tool-deny-reason:focus { border-color: #7f1d1d; }
 
 /* ── Question bar (AskUserQuestion) ─────────────────────────────────────── */
 .question-bar { display: flex; flex-direction: column; gap: 14px; padding: 14px 20px 0; border-top: 1px solid #2a2a2a; background: #070d14; min-height: 150px; overflow-y: auto; }
