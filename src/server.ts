@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import * as store from "./store.ts";
 import * as jobs from "./jobs.ts";
+import { generateTitle } from "./title.ts";
 import { CreateJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
 import type { JobMode } from "./types.ts";
 
@@ -156,6 +157,7 @@ Bun.serve({
         }));
 
         store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree, model ?? null, effort ?? null);
+        generateTitle(prompt).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
           Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
         } else {

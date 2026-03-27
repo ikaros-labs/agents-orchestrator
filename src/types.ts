@@ -39,6 +39,7 @@ export interface Job {
   model: string | null;
   effort: JobEffort | null;
   prompt: string;
+  title: string | null;
   tools: string[];
   createdAt: string;
   startedAt: string | null;

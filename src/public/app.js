@@ -187,7 +187,7 @@ function renderList(list) {
         ${j.effort && j.effort !== 'high' ? `<span class="mode-tag mode-tag-${j.effort}">${j.effort}</span>` : ''}
         <span class="job-time">${relTime(j.createdAt)}</span>
       </div>
-      <div class="job-prompt">${escHtml(j.prompt)}</div>
+      <div class="job-prompt">${escHtml(j.title || j.prompt)}</div>
       ${j.images && j.images.length ? `<div class="job-image-badge">📎 ${j.images.length} file${j.images.length > 1 ? 's' : ''}</div>` : ''}
       ${j.cwd ? `<div style="font-size:10px;color:#555;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.cwd)}</div>` : ''}
     </div>
@@ -688,11 +688,11 @@ function initSSE() {
   // Job metadata changed: status, result, error, plan, pendingTools, timestamps, archived
   es.addEventListener('job_status', e => {
     const data = JSON.parse(e.data);
-    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage } = data;
+    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage, title } = data;
     const job = jobs[jobId];
     if (!job) return;
     const prevStatus = job.status;
-    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage });
+    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage, title });
     renderList(getSortedJobs());
     if (jobId === selectedId) {
       if (prevStatus !== status) renderDetailFresh = true;

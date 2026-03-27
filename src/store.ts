@@ -12,7 +12,7 @@ const jobs = new Map<string, Job>();
 
 export type StoreEvent =
   | { type: "job_created"; job: Job }
-  | { type: "job_status"; jobId: string; status: JobStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; sessionId: string | null; pendingTools: Job["pendingTools"]; archived: boolean; usage: JobUsage | null }
+  | { type: "job_status"; jobId: string; status: JobStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; sessionId: string | null; pendingTools: Job["pendingTools"]; archived: boolean; usage: JobUsage | null; title: string | null }
   | { type: "log_entry"; jobId: string; entry: LogEntry; index: number };
 
 const subscribers = new Set<(e: StoreEvent) => void>();
@@ -40,6 +40,7 @@ function emitJobStatus(job: Job): void {
     pendingTools: job.pendingTools,
     archived: job.archived,
     usage: job.usage,
+    title: job.title,
   });
 }
 
@@ -68,6 +69,8 @@ export function loadStore(): void {
       // Migrate jobs created before model/effort selection
       if (job.model === undefined) job.model = null;
       if (job.effort === undefined) job.effort = null;
+      // Migrate jobs created before title generation
+      if (job.title === undefined) job.title = null;
       jobs.set(job.id, job);
     } catch {
       // skip corrupt files
@@ -100,6 +103,7 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     model,
     effort,
     prompt,
+    title: null,
     tools,
     cwd,
     useWorktree,
@@ -158,6 +162,14 @@ export function setSessionId(id: string, sessionId: string): void {
   if (!job) { console.warn(`[store] setSessionId: job not found: ${id}`); return; }
   job.sessionId = sessionId;
   persistJob(job);
+}
+
+export function setTitle(id: string, title: string): void {
+  const job = jobs.get(id);
+  if (!job) return;
+  job.title = title;
+  persistJob(job);
+  emitJobStatus(job);
 }
 
 export function setWorktreePath(id: string, worktreePath: string): void {
