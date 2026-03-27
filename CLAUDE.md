@@ -13,9 +13,9 @@ Runtime and package manager: **bun**
 
 The server is running at **http://100.81.181.2:6432/**
 
-### Running across worktrees
+### Production server (across worktrees)
 
-Use `server.sh` to start the server. It automatically kills any existing instance first, so you never need to manage multiple servers.
+Use `server.sh` to run the production-like server. It manages a singleton instance — automatically killing any existing one first. Use this for running the main server, not for testing your changes.
 
 ```bash
 ./server.sh                          # start from current worktree
@@ -24,6 +24,21 @@ Use `server.sh` to start the server. It automatically kills any existing instanc
 ```
 
 PID is stored in `/tmp/agents-orchestrator.pid`; logs go to `/tmp/agents-orchestrator.log`.
+
+### Testing your changes
+
+After finishing a task, use `dev-server.sh` — it starts a throwaway dev server on a random port so it never conflicts with anything else. Multiple can run simultaneously.
+
+```bash
+./dev-server.sh                          # start from current worktree
+./dev-server.sh /path/to/other-worktree  # start from a specific worktree
+```
+
+This picks a random port in the 3100–19999 range, installs deps, starts bun in watch mode, and auto-exits after 4 hours. The URL is printed on startup.
+
+### General notes
+
+- Before looking up or using anything from `node_modules` (imports, types, CLI tools), always run `bun i` first to ensure dependencies are installed.
 
 ## API
 
