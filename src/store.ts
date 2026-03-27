@@ -71,6 +71,8 @@ export function loadStore(): void {
       if (job.effort === undefined) job.effort = null;
       // Migrate jobs created before title generation
       if (job.title === undefined) job.title = null;
+      // Migrate jobs created before sandbox support
+      if (job.sandboxed === undefined) job.sandboxed = false;
       jobs.set(job.id, job);
     } catch {
       // skip corrupt files
@@ -95,7 +97,7 @@ export function loadStore(): void {
   }
 }
 
-export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: JobEffort | null = null): Job {
+export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: JobEffort | null = null, sandboxed: boolean = false): Job {
   const job: Job = {
     id,
     status: "pending",
@@ -107,6 +109,7 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     tools,
     cwd,
     useWorktree,
+    sandboxed,
     worktreePath: null,
     createdAt: new Date().toISOString(),
     startedAt: null,

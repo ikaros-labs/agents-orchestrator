@@ -34,9 +34,14 @@
         <option value="__new__">＋ Add directory…</option>
       </select>
       <input type="text" id="cwd-custom" placeholder="Enter path…" style="display:none">
-      <label class="worktree-label">
-        <input type="checkbox" id="use-worktree" checked> Use worktree
-      </label>
+      <div class="checkbox-row">
+        <label class="worktree-label">
+          <input type="checkbox" id="use-worktree" checked> Use worktree
+        </label>
+        <label class="worktree-label">
+          <input type="checkbox" id="use-sandbox"> Sandboxed (Docker)
+        </label>
+      </div>
       <div class="form-selectors-row">
         <div class="mode-selector" id="model-selector">
           <button class="mode-btn" data-model="claude-haiku-4-5-20251001" onclick="setModel('claude-haiku-4-5-20251001')">Haiku</button>

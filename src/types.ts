@@ -47,6 +47,7 @@ export interface Job {
   log: LogEntry[];
   cwd: string | null;
   useWorktree: boolean;
+  sandboxed: boolean;
   worktreePath: string | null;
   plan: string | null;
   sessionId: string | null;

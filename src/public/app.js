@@ -204,6 +204,7 @@ function renderList(list) {
         ${j.mode && j.mode !== 'auto' ? `<span class="mode-tag mode-tag-${j.mode}">${j.mode}</span>` : ''}
         ${j.model && j.model !== 'claude-sonnet-4-6' ? `<span class="mode-tag mode-tag-${j.model === 'claude-haiku-4-5-20251001' ? 'haiku' : 'opus'}">${j.model === 'claude-haiku-4-5-20251001' ? 'haiku' : 'opus'}</span>` : ''}
         ${j.effort && j.effort !== 'high' ? `<span class="mode-tag mode-tag-${j.effort}">${j.effort}</span>` : ''}
+        ${j.sandboxed ? `<span class="mode-tag mode-tag-sandboxed">sandboxed</span>` : ''}
         <span class="job-time">${relTime(j.createdAt)}</span>
       </div>
       <div class="job-prompt">${escHtml(j.title || j.prompt)}</div>
@@ -570,6 +571,7 @@ function renderDetail(job) {
         <span>Tools: ${job.tools.join(', ')}</span>
         ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
         ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
+        ${job.sandboxed ? `<span class="mode-tag mode-tag-sandboxed" title="Running inside a Docker container">sandboxed</span>` : ''}
         ${job.usage ? `<span title="Token and cost usage for this job">$${job.usage.costUSD.toFixed(1)} · ${job.usage.totalTokens.toLocaleString()} tokens (${(job.usage.totalTokens / 200000 * 100).toFixed(1)}%)</span>` : ''}
         <div class="detail-actions">${stopBtnHtml}${archiveBtnHtml}</div>
       </div>
@@ -908,7 +910,8 @@ async function submitJob() {
     ? document.getElementById('cwd-custom').value.trim()
     : cwdSel.value;
   const useWorktree = document.getElementById('use-worktree').checked;
-  const body = cwdVal ? {prompt, tools, cwd: cwdVal, useWorktree, mode: currentMode, model: currentModel, effort: currentEffort} : {prompt, tools, useWorktree, mode: currentMode, model: currentModel, effort: currentEffort};
+  const sandboxed = document.getElementById('use-sandbox').checked;
+  const body = cwdVal ? {prompt, tools, cwd: cwdVal, useWorktree, sandboxed, mode: currentMode, model: currentModel, effort: currentEffort} : {prompt, tools, useWorktree, sandboxed, mode: currentMode, model: currentModel, effort: currentEffort};
   if (pendingFiles.length) {
     body.images = pendingFiles.map(({ mediaType, data }) => ({ mediaType, data }));
   }

@@ -12,6 +12,7 @@ import { basename, extname, join } from "node:path";
 import { homedir } from "node:os";
 import * as store from "./store.ts";
 import type { Job } from "./types.ts";
+import { isDockerAvailable, ensureImage, spawnInDocker, cleanupContainer } from "./docker.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -160,14 +161,35 @@ export function stopJob(id: string): boolean {
   }
 
   store.setStatus(id, "stopped");
+  // Clean up sandbox container if applicable
+  const job = store.getJob(id);
+  if (job?.sandboxed) cleanupContainer(id).catch(() => {});
   return true;
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
+/**
+ * Returns extra query() options for sandboxed jobs: bypass permissions and
+ * redirect the Claude Code subprocess into a Docker container.
+ */
+function makeSandboxedQueryOptions(id: string, worktreePath: string | null) {
+  return {
+    permissionMode: "bypassPermissions" as const,
+    allowDangerouslySkipPermissions: true,
+    spawnClaudeCodeProcess: (opts: any) => spawnInDocker(opts, id, worktreePath),
+  };
+}
+
 function makeCanUseTool(id: string): CanUseTool {
   return async (toolName: string, input: Record<string, unknown>, options): Promise<PermissionResult> => {
     const { toolUseID, agentID } = options;
+
+    // Sandboxed jobs: auto-approve everything (container is the security boundary).
+    const job = store.getJob(id);
+    if (job?.sandboxed) {
+      return { behavior: "allow", updatedInput: input };
+    }
 
     // Deny ExitPlanMode so the planning query ends cleanly here.
     // Execution is triggered separately via executeJob() once the user approves the plan.
@@ -183,7 +205,6 @@ function makeCanUseTool(id: string): CanUseTool {
     store.addPendingTool(id, toolUseID, toolName, input, agentID);
     console.log(`[canUseTool] id=${id} tool=${toolName} toolUseID=${toolUseID} → awaiting approval`);
 
-    const job = store.getJob(id);
     if (job && job.status !== "awaiting_tool_approval" && job.status !== "awaiting_user_question") {
       store.setStatus(id, toolName === "AskUserQuestion" ? "awaiting_user_question" : "awaiting_tool_approval");
     }
@@ -201,6 +222,9 @@ function makeCanUseTool(id: string): CanUseTool {
 function handleJobError(id: string, err: unknown): void {
   store.setError(id, err instanceof Error ? err.message : String(err));
   store.setStatus(id, "failed");
+  // Clean up sandbox container on failure
+  const job = store.getJob(id);
+  if (job?.sandboxed) cleanupContainer(id).catch(() => {});
 }
 
 /** Save base64 image data to disk and return the server-relative URL. */
@@ -385,10 +409,12 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
   const controller = new AbortController();
   activeControllers.set(id, controller);
   const planJobOpts = store.getJob(id);
+  const sandboxOpts = planJobOpts?.sandboxed ? { spawnClaudeCodeProcess: (o: any) => spawnInDocker(o, id, effectiveCwd) } : {};
   try {
+    if (planJobOpts?.sandboxed) await ensureImage();
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, abortController: controller, ...(planJobOpts?.model ? { model: planJobOpts.model } : {}), ...(planJobOpts?.effort ? { effort: planJobOpts.effort } : {}), ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, abortController: controller, ...(planJobOpts?.model ? { model: planJobOpts.model } : {}), ...(planJobOpts?.effort ? { effort: planJobOpts.effort } : {}), ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}), ...sandboxOpts },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     if (controller.signal.aborted) return;
@@ -409,12 +435,13 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
   store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
   const revisePlanJobRef = store.getJob(id);
   const inWorktree = !!revisePlanJobRef?.worktreePath;
+  const sandboxOpts = revisePlanJobRef?.sandboxed ? { spawnClaudeCodeProcess: (o: any) => spawnInDocker(o, id, cwd) } : {};
   const controller = new AbortController();
   activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: feedback,
-      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, resume: sessionId, abortController: controller, ...(revisePlanJobRef?.model ? { model: revisePlanJobRef.model } : {}), ...(revisePlanJobRef?.effort ? { effort: revisePlanJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, resume: sessionId, abortController: controller, ...(revisePlanJobRef?.model ? { model: revisePlanJobRef.model } : {}), ...(revisePlanJobRef?.effort ? { effort: revisePlanJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}), ...sandboxOpts },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     if (controller.signal.aborted) return;
@@ -436,12 +463,14 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
   const directExecJob = store.getJob(id);
   const inWorktree = !!directExecJob?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
+  const sandboxOpts = directExecJob?.sandboxed ? makeSandboxedQueryOptions(id, effectiveCwd) : {};
   const controller = new AbortController();
   activeControllers.set(id, controller);
   try {
+    if (directExecJob?.sandboxed) await ensureImage();
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, abortController: controller, ...(directExecJob?.model ? { model: directExecJob.model } : {}), ...(directExecJob?.effort ? { effort: directExecJob.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, abortController: controller, ...(directExecJob?.model ? { model: directExecJob.model } : {}), ...(directExecJob?.effort ? { effort: directExecJob.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}), ...sandboxOpts },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -451,6 +480,7 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
+    if (directExecJob?.sandboxed) cleanupContainer(id).catch(() => {});
   }
 }
 
@@ -459,12 +489,13 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   store.setStatus(id, "running");
   const execJobRef = store.getJob(id);
   const inWorktree = !!execJobRef?.worktreePath;
+  const sandboxOpts = execJobRef?.sandboxed ? makeSandboxedQueryOptions(id, cwd) : {};
   const controller = new AbortController();
   activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, ...(sessionId ? { resume: sessionId } : {}), abortController: controller, ...(execJobRef?.model ? { model: execJobRef.model } : {}), ...(execJobRef?.effort ? { effort: execJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, ...(sessionId ? { resume: sessionId } : {}), abortController: controller, ...(execJobRef?.model ? { model: execJobRef.model } : {}), ...(execJobRef?.effort ? { effort: execJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}), ...sandboxOpts },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -474,6 +505,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
+    if (execJobRef?.sandboxed) cleanupContainer(id).catch(() => {});
   }
 }
 
@@ -494,12 +526,13 @@ export async function followUpJob(id: string, prompt: string, sessionId: string 
     : prompt;
   const followUpJobRef = store.getJob(id);
   const inWorktree = !!followUpJobRef?.worktreePath;
+  const sandboxOpts = followUpJobRef?.sandboxed ? makeSandboxedQueryOptions(id, cwd) : {};
   const controller = new AbortController();
   activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, resume: sessionId, abortController: controller, ...(followUpJobRef?.model ? { model: followUpJobRef.model } : {}), ...(followUpJobRef?.effort ? { effort: followUpJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, resume: sessionId, abortController: controller, ...(followUpJobRef?.model ? { model: followUpJobRef.model } : {}), ...(followUpJobRef?.effort ? { effort: followUpJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}), ...sandboxOpts },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -509,5 +542,6 @@ export async function followUpJob(id: string, prompt: string, sessionId: string 
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
+    if (followUpJobRef?.sandboxed) cleanupContainer(id).catch(() => {});
   }
 }
