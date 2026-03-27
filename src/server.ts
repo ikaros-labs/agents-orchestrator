@@ -144,7 +144,7 @@ Bun.serve({
       if (req.method === "POST") {
         const parsed = await parseBody(req, CreateJobSchema);
         if (parsed instanceof Response) return parsed;
-        const { prompt, tools: rawTools, cwd = null, useWorktree, images: rawImages, mode } = parsed.data;
+        const { prompt, tools: rawTools, cwd = null, useWorktree, images: rawImages, mode, model, effort } = parsed.data;
 
         const tools = rawTools ?? jobs.DEFAULT_TOOLS;
         const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
@@ -155,7 +155,7 @@ Bun.serve({
           filename: `${i}.${jobs.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
         }));
 
-        store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree);
+        store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree, model ?? null, effort ?? null);
         if (mode === "edit") {
           Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
         } else {

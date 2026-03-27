@@ -15,6 +15,8 @@ export const CreateJobSchema = z.object({
   useWorktree: z.boolean().optional().default(true),
   images: z.array(RawImageSchema).default([]),
   mode: z.enum(["auto", "plan", "edit"]).optional().default("auto"),
+  model: z.string().optional().default("claude-sonnet-4-6"),
+  effort: z.enum(["low", "medium", "high", "max"]).optional().default("high"),
 });
 
 export const ReviseSchema = z.object({
