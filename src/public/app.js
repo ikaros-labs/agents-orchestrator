@@ -11,6 +11,7 @@ function goBack() { showMobilePanel('sidebar'); }
 
 function showNewTask() {
   selectedId = null;
+  history.replaceState(null, '', location.pathname);
   document.querySelectorAll('.job-item').forEach(el => el.classList.remove('selected'));
   document.getElementById('new-task-panel').classList.remove('hidden');
   document.getElementById('detail').classList.add('hidden');
@@ -665,6 +666,7 @@ function removeReviseImage(jobId, index) { removeJobImage(reviseImages, 'revise'
 // ── API actions ────────────────────────────────────────────────────────────
 async function selectJob(id) {
   selectedId = id;
+  history.replaceState(null, '', '#' + id);
   document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(id)));
   document.getElementById('new-task-panel').classList.add('hidden');
   document.getElementById('detail').classList.remove('hidden');
@@ -733,7 +735,19 @@ function initSSE() {
     list.forEach(j => { jobs[j.id] = j; });
     renderList(list); // already server-sorted
     updateCwdSelect(list);
-    if (selectedId && jobs[selectedId]) renderDetail(jobs[selectedId]);
+    const hashId = location.hash.slice(1);
+    if (hashId && jobs[hashId] && !selectedId) {
+      // First load: restore from hash using snapshot data (no extra fetch)
+      selectedId = hashId;
+      document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(hashId)));
+      document.getElementById('new-task-panel').classList.add('hidden');
+      document.getElementById('detail').classList.remove('hidden');
+      renderDetailFresh = true;
+      renderDetail(jobs[hashId]);
+      if (isMobile()) showMobilePanel('detail');
+    } else if (selectedId && jobs[selectedId]) {
+      renderDetail(jobs[selectedId]);
+    }
   });
 
   // A brand-new job was created
@@ -949,5 +963,12 @@ window.addEventListener('resize', () => {
   main.classList.toggle('mobile-detail-active', !!active);
   document.body.classList.toggle('mobile-detail-active', !!active);
 });
+
+// Eagerly show the detail panel if a job hash is in the URL, to avoid the
+// flash of the new-task form before the SSE snapshot arrives.
+if (location.hash.slice(1)) {
+  document.getElementById('new-task-panel').classList.add('hidden');
+  document.getElementById('detail').classList.remove('hidden');
+}
 
 initSSE();
