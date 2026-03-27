@@ -472,7 +472,8 @@ function renderDetail(job) {
           ${inputRows ? `<div class="tool-input-detail">${inputRows}</div>` : ''}
           <div class="tool-approval-actions">
             <button class="btn-approve" onclick="approveToolUse('${job.id}', '${toolUseID}')">Approve</button>
-            <button class="btn-reject" onclick="rejectToolUse('${job.id}', '${toolUseID}')">Deny</button>
+            <input type="text" class="tool-deny-reason" placeholder="Reason for denying (optional)">
+            <button class="btn-reject" onclick="rejectToolUse('${job.id}', '${toolUseID}', this)">Deny</button>
           </div>
         </div>`;
       }).join('')
@@ -739,8 +740,10 @@ async function approveToolUse(id, toolUseID) {
   // SSE job_status event will update the detail panel
 }
 
-async function rejectToolUse(id, toolUseID) {
-  await fetch('/jobs/' + id + '/reject-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolUseID }) });
+async function rejectToolUse(id, toolUseID, btn) {
+  const reason = btn?.previousElementSibling?.value?.trim() || '';
+  const body = reason ? { toolUseID, reason } : { toolUseID };
+  await fetch('/jobs/' + id + '/reject-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   // SSE job_status event will update the detail panel
 }
 
