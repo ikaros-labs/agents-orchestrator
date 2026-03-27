@@ -158,6 +158,8 @@ Bun.serve({
         store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree, model ?? null, effort ?? null);
         if (mode === "edit") {
           Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
+        } else if (mode === "sandbox") {
+          Promise.resolve().then(() => jobs.sandboxedExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
         } else {
           // "auto" and "plan" both use the planning flow
           Promise.resolve().then(() => jobs.planJob(id, prompt, tools, cwd, rawImages, useWorktree));

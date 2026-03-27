@@ -13,7 +13,7 @@ export const JOB_STATUS = {
   STOPPED: "stopped",
 } as const satisfies Record<string, JobStatus>;
 
-export type JobMode = "auto" | "plan" | "edit";
+export type JobMode = "auto" | "plan" | "edit" | "sandbox";
 export type JobEffort = "low" | "medium" | "high" | "max";
 
 export type LogEntry =

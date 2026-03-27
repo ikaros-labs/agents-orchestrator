@@ -434,6 +434,60 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
   }
 }
 
+/** canUseTool that auto-approves everything — used by sandbox mode. */
+function makeAutoApproveTool(): CanUseTool {
+  return async (toolName: string, input: Record<string, unknown>): Promise<PermissionResult> => {
+    return { behavior: "allow", updatedInput: input };
+  };
+}
+
+export async function sandboxedExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
+  console.log(`[sandboxedExecuteJob] id=${id}`);
+  store.setStatus(id, "running");
+  const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
+  const job = store.getJob(id);
+  const inWorktree = !!job?.worktreePath;
+  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
+  const controller = new AbortController();
+  activeControllers.set(id, controller);
+  try {
+    const stream = query({
+      prompt: promptArg as any,
+      options: {
+        allowedTools: [...tools, "mcp__orchestrator__attach_files"],
+        permissionMode: "acceptEdits",
+        canUseTool: makeAutoApproveTool(),
+        sandbox: {
+          enabled: true,
+          autoAllowBashIfSandboxed: true,
+          allowUnsandboxedCommands: false,
+          network: { allowLocalBinding: true },
+          filesystem: {
+            allowWrite: effectiveCwd ? [effectiveCwd] : [],
+            denyRead: [join(homedir(), ".ssh"), join(homedir(), ".env")],
+          },
+        },
+        stderr: (data: string) => console.error(`[sandbox:${id}] ${data}`),
+        settingSources: ["user", "project", "local"],
+        mcpServers: { orchestrator: makeAttachFilesServer(id) },
+        abortController: controller,
+        ...(job?.model ? { model: job.model } : {}),
+        ...(job?.effort ? { effort: job.effort } : {}),
+        ...worktreeSystemPrompt(inWorktree),
+        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+      },
+    });
+    await runQueryStream(id, stream, rawImages.length, { captureResult: true });
+    if (controller.signal.aborted) return;
+    store.setStatus(id, "completed");
+  } catch (err) {
+    if (controller.signal.aborted) return;
+    handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
+  }
+}
+
 export async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
   console.log(`[executeJob] id=${id}`);
   store.setStatus(id, "running");

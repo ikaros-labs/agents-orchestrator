@@ -858,7 +858,7 @@ document.getElementById('prompt').addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Tab' && e.shiftKey) {
     e.preventDefault();
-    const modes = ['auto', 'plan', 'edit'];
+    const modes = ['auto', 'plan', 'edit', 'sandbox'];
     const next = modes[(modes.indexOf(currentMode) + 1) % modes.length];
     setMode(next);
   }
