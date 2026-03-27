@@ -161,15 +161,22 @@ function md(text) {
 
 // ── Job list ───────────────────────────────────────────────────────────────
 function renderList(list) {
-  // Update sidebar header with archive toggle
+  // Update sidebar header with new task button and archive toggle
   const archivedCount = list.filter(j => j.archived).length;
   const hdr = document.getElementById('sidebar-header');
   if (hdr) {
-    hdr.innerHTML = (archivedCount > 0 || showArchived)
+    const archiveBtn = (archivedCount > 0 || showArchived)
       ? `<button class="btn-show-archived${showArchived ? ' active' : ''}" onclick="toggleShowArchived()">
            ${showArchived ? 'Hide Archived' : `Archived (${archivedCount})`}
          </button>`
       : '';
+    hdr.innerHTML = `
+      <button class="btn-new-task" onclick="openNewTaskModal()" title="Cmd+K">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        New Task
+      </button>
+      ${archiveBtn}
+    `;
   }
 
   const visible = showArchived ? list : list.filter(j => !j.archived);
@@ -818,6 +825,17 @@ async function sendFollowUp(id) {
   }
 }
 
+function openNewTaskModal() {
+  document.getElementById('modal-overlay').classList.add('active');
+  document.getElementById('prompt').focus();
+}
+
+function closeNewTaskModal(event) {
+  // Only close if clicking on overlay background, not modal content itself
+  if (event && event.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('active');
+}
+
 async function submitJob() {
   const prompt = document.getElementById('prompt').value.trim();
   if (!prompt) return;
@@ -843,6 +861,7 @@ async function submitJob() {
     pendingFiles = [];
     renderFilePreviews();
     selectedId = id;
+    closeNewTaskModal();
     // Fetch and show the new job immediately; SSE will deliver all subsequent updates
     const job = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
     if (job) { jobs[id] = job; renderDetailFresh = true; renderDetail(job); if (isMobile()) showMobilePanel('detail'); }
@@ -856,6 +875,16 @@ document.getElementById('prompt').addEventListener('keydown', e => {
 });
 
 document.addEventListener('keydown', e => {
+  // Cmd/Ctrl+K to open new task modal
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    openNewTaskModal();
+  }
+  // Esc to close modal
+  if (e.key === 'Escape') {
+    closeNewTaskModal();
+  }
+  // Shift+Tab to cycle modes
   if (e.key === 'Tab' && e.shiftKey) {
     e.preventDefault();
     const modes = ['auto', 'plan', 'edit'];
