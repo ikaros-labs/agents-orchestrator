@@ -11,6 +11,7 @@ function goBack() { showMobilePanel('sidebar'); }
 
 function showNewTask() {
   selectedId = null;
+  history.replaceState(null, '', location.pathname);
   document.querySelectorAll('.job-item').forEach(el => el.classList.remove('selected'));
   document.getElementById('new-task-panel').classList.remove('hidden');
   document.getElementById('detail').classList.add('hidden');
@@ -641,6 +642,7 @@ function removeReviseImage(jobId, index) { removeJobImage(reviseImages, 'revise'
 // ── API actions ────────────────────────────────────────────────────────────
 async function selectJob(id) {
   selectedId = id;
+  history.replaceState(null, '', '#' + id);
   document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(id)));
   document.getElementById('new-task-panel').classList.add('hidden');
   document.getElementById('detail').classList.remove('hidden');
@@ -690,7 +692,12 @@ function initSSE() {
     list.forEach(j => { jobs[j.id] = j; });
     renderList(list); // already server-sorted
     updateCwdSelect(list);
-    if (selectedId && jobs[selectedId]) renderDetail(jobs[selectedId]);
+    const hashId = location.hash.slice(1);
+    if (hashId && jobs[hashId]) {
+      selectJob(hashId);
+    } else if (selectedId && jobs[selectedId]) {
+      renderDetail(jobs[selectedId]);
+    }
   });
 
   // A brand-new job was created
