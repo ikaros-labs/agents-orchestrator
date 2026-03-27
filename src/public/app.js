@@ -195,6 +195,20 @@ function toolDetail(name, input, cwd) {
   return detail ? ` <span style="opacity:0.6;font-weight:400">${escHtml(String(detail))}</span>` : '';
 }
 
+function renderTodoWrite(todos) {
+  if (!Array.isArray(todos) || !todos.length) return '';
+  const icons = { completed: '✓', in_progress: '●', pending: '○' };
+  const items = todos.map(t => {
+    const status = t.status ?? 'pending';
+    const icon = icons[status] ?? '○';
+    return `<div class="todo-item todo-${escHtml(status)}">
+      <span class="todo-icon">${icon}</span>
+      <span class="todo-content">${escHtml(String(t.content ?? ''))}</span>
+    </div>`;
+  }).join('');
+  return `<div class="log-todo">${items}</div>`;
+}
+
 function renderLogEntry(e, cwd) {
   if (e.type === 'user') {
     return `<div class="log-user">${escHtml(e.text)}</div>`;
@@ -204,6 +218,7 @@ function renderLogEntry(e, cwd) {
   }
   if (e.type === 'tool_call') {
     if (e.name === 'ExitPlanMode') return '';
+    if (e.name === 'TodoWrite') return renderTodoWrite(e.input?.todos);
     return `<div class="log-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
   if (e.type === 'image') {
