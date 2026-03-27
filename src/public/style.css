@@ -33,7 +33,7 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 #new-task-btn svg { flex-shrink: 0; }
 .kbd-hint { font-size: 10px; color: #445; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 3px; padding: 1px 5px; margin-left: auto; font-family: monospace; flex-shrink: 0; }
 
-.btn-show-archived { background: transparent; color: #555; border: 1px solid #2a2a2a; border-radius: 5px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.btn-show-archived { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: #555; border: 1px solid #2a2a2a; border-radius: 5px; padding: 5px 9px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
 .btn-show-archived:hover { color: #aaa; border-color: #444; }
 .btn-show-archived.active { color: #6b9eff; border-color: #2a3a6a; }
 .job-list { flex: 1; overflow-y: auto; min-height: 0; }
