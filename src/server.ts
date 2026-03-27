@@ -4,7 +4,7 @@ import * as store from "./store.ts";
 import * as jobs from "./jobs.ts";
 import { generateTitle } from "./title.ts";
 import { CreateJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
-import type { JobMode } from "./types.ts";
+import type { JobMode, SandboxMode } from "./types.ts";
 
 const sseEncoder = new TextEncoder();
 
@@ -145,7 +145,7 @@ Bun.serve({
       if (req.method === "POST") {
         const parsed = await parseBody(req, CreateJobSchema);
         if (parsed instanceof Response) return parsed;
-        const { prompt, tools: rawTools, cwd = null, useWorktree, images: rawImages, mode, model, effort } = parsed.data;
+        const { prompt, tools: rawTools, cwd = null, useWorktree, images: rawImages, mode, model, effort, sandbox } = parsed.data;
 
         const tools = rawTools ?? jobs.DEFAULT_TOOLS;
         const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
@@ -156,7 +156,7 @@ Bun.serve({
           filename: `${i}.${jobs.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
         }));
 
-        store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree, model ?? null, effort ?? null);
+        store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
         generateTitle(prompt, rawImages).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
           Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
@@ -220,6 +220,7 @@ Bun.serve({
       const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
+      if (job.sandbox !== "approval") return jsonError(409, "Job does not use approval mode");
       if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;
@@ -238,6 +239,7 @@ Bun.serve({
       const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
+      if (job.sandbox !== "approval") return jsonError(409, "Job does not use approval mode");
       if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;

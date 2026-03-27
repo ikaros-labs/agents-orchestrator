@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { InputFile, Job, JobEffort, JobMode, JobStatus, JobUsage, LogEntry } from "./types.ts";
+import type { InputFile, Job, JobEffort, JobMode, JobStatus, JobUsage, LogEntry, SandboxMode } from "./types.ts";
 
 const DATA_DIR = join(homedir(), ".agent-orchestrator", "jobs");
 mkdirSync(DATA_DIR, { recursive: true });
@@ -71,6 +71,8 @@ export function loadStore(): void {
       if (job.effort === undefined) job.effort = null;
       // Migrate jobs created before title generation
       if (job.title === undefined) job.title = null;
+      // Migrate jobs created before sandbox support
+      if ((job as any).sandbox === undefined) (job as any).sandbox = "approval";
       jobs.set(job.id, job);
     } catch {
       // skip corrupt files
@@ -95,7 +97,7 @@ export function loadStore(): void {
   }
 }
 
-export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: JobEffort | null = null): Job {
+export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: JobEffort | null = null, sandbox: SandboxMode = "none"): Job {
   const job: Job = {
     id,
     status: "pending",
@@ -119,6 +121,7 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     images,
     pendingTools: [],
     archived: false,
+    sandbox,
     usage: null,
   };
   jobs.set(id, job);

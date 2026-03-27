@@ -50,12 +50,20 @@
           <button class="mode-btn" data-effort="max" onclick="setEffort('max')">Max</button>
         </div>
       </div>
-      <div class="form-submit-row">
+      <div class="form-selectors-row">
         <div class="mode-selector" id="mode-selector">
           <button class="mode-btn active" data-mode="auto" onclick="setMode('auto')">Auto</button>
           <button class="mode-btn" data-mode="plan" onclick="setMode('plan')">Plan</button>
           <button class="mode-btn" data-mode="edit" onclick="setMode('edit')">Edit</button>
         </div>
+        <div class="mode-selector" id="sandbox-selector">
+          <button class="mode-btn active" data-sandbox="none" onclick="setSandbox('none')">No sandbox</button>
+          <button class="mode-btn" data-sandbox="sandbox" onclick="setSandbox('sandbox')">Sandbox</button>
+          <button class="mode-btn" data-sandbox="docker" onclick="setSandbox('docker')">Docker</button>
+          <button class="mode-btn" data-sandbox="approval" onclick="setSandbox('approval')">Approval</button>
+        </div>
+      </div>
+      <div class="form-submit-row">
         <button id="submit-btn" onclick="submitJob()">Run Agent</button>
       </div>
     </div>

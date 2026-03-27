@@ -177,6 +177,9 @@ details.log-tool-bash[open] > summary { border-bottom-left-radius: 0; border-bot
 .mode-tag-low { background: #1a1a1a; color: #666; }
 .mode-tag-medium { background: #1a1a1a; color: #888; }
 .mode-tag-max { background: #2d1515; color: #f87171; }
+.mode-tag-sandbox { background: #0d2520; color: #34d399; }
+.mode-tag-docker { background: #0d1a2d; color: #60a5fa; }
+.mode-tag-approval { background: #2d2015; color: #fbbf24; }
 
 /* ── Image attachment ───────────────────────────────────────────────────── */
 .image-attach-area { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 24px; }

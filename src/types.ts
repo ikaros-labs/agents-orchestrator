@@ -15,6 +15,7 @@ export const JOB_STATUS = {
 
 export type JobMode = "auto" | "plan" | "edit";
 export type JobEffort = "low" | "medium" | "high" | "max";
+export type SandboxMode = "none" | "sandbox" | "docker" | "approval";
 
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
@@ -55,5 +56,6 @@ export interface Job {
   images: InputFile[];
   pendingTools: Array<{ toolUseID: string; name: string; input: Record<string, unknown>; agentID?: string }>;
   archived: boolean;
+  sandbox: SandboxMode;
   usage: JobUsage | null;
 }
