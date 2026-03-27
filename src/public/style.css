@@ -63,6 +63,20 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 .log-text { font-size: 13px; color: #c8c8c8; line-height: 1.6; word-break: break-word; }
 .log-tool { display: inline-flex; align-items: center; gap: 6px; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 4px; padding: 3px 10px; font-size: 11px; font-family: monospace; color: #818cf8; align-self: flex-start; }
 .log-tool::before { content: "⚙"; font-size: 10px; }
+/* Bash collapsible toggle */
+details.log-tool-bash { align-self: flex-start; }
+details.log-tool-bash > summary { display: inline-flex; align-items: center; gap: 6px; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 4px; padding: 3px 10px; font-size: 11px; font-family: monospace; color: #818cf8; cursor: pointer; list-style: none; user-select: none; }
+details.log-tool-bash > summary::-webkit-details-marker { display: none; }
+details.log-tool-bash > summary::before { content: "⚙"; font-size: 10px; }
+details.log-tool-bash > summary .tool-detail { opacity: 0.6; font-weight: 400; }
+details.log-tool-bash > summary::after { content: "▶"; font-size: 8px; opacity: 0.4; margin-left: 2px; }
+details.log-tool-bash[open] > summary::after { content: "▼"; }
+details.log-tool-bash[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-color: transparent; }
+.tool-expand-body { background: #111122; border: 1px solid #2a2a4a; border-top: none; border-radius: 0 4px 4px 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; max-width: 700px; }
+.tool-expand-row { display: flex; gap: 10px; align-items: flex-start; font-size: 11px; font-family: monospace; }
+.tool-expand-key { color: #7c3aed; font-weight: 600; flex-shrink: 0; min-width: 28px; padding-top: 1px; }
+.tool-expand-code { color: #d1d5db; white-space: pre-wrap; word-break: break-all; margin: 0; line-height: 1.5; max-height: 300px; overflow-y: auto; }
+.tool-expand-empty .tool-expand-code { color: #4b5563; font-style: italic; }
 .log-todo { display: flex; flex-direction: column; gap: 3px; align-self: stretch; background: #0f1117; border: 1px solid #2a2a4a; border-radius: 6px; padding: 8px 12px; font-size: 12px; }
 .todo-item { display: flex; align-items: baseline; gap: 8px; }
 .todo-icon { font-size: 11px; flex-shrink: 0; }

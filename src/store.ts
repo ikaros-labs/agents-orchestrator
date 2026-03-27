@@ -149,6 +149,16 @@ export function appendLog(id: string, entry: LogEntry): void {
   emit({ type: "log_entry", jobId: id, entry, index: job.log.length - 1 });
 }
 
+export function patchLog(id: string, index: number, patch: Record<string, unknown>): void {
+  const job = jobs.get(id);
+  if (!job) return;
+  const entry = job.log[index];
+  if (!entry) return;
+  Object.assign(entry, patch);
+  persistJob(job);
+  emit({ type: "log_entry", jobId: id, entry: { ...entry } as LogEntry, index });
+}
+
 export function setPlan(id: string, plan: string): void {
   const job = jobs.get(id);
   if (!job) { console.warn(`[store] setPlan: job not found: ${id}`); return; }

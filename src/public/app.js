@@ -245,6 +245,29 @@ function renderTodoWrite(todos) {
   return `<div class="log-todo">${items}</div>`;
 }
 
+function renderBashTool(e) {
+  const desc = e.input?.description ? escHtml(String(e.input.description)) : null;
+  const cmd = e.input?.command ? escHtml(String(e.input.command)) : null;
+  const summary = desc || (cmd ? cmd.slice(0, 80) : 'Bash');
+  const hasOutput = e.output !== undefined && e.output !== null;
+  const outputIsEmpty = !e.output || e.output === '(Bash completed with no output)';
+
+  let bodyHtml = '';
+  if (cmd) {
+    bodyHtml += `<div class="tool-expand-row"><span class="tool-expand-key">cmd</span><pre class="tool-expand-code">${cmd}</pre></div>`;
+  }
+  if (hasOutput) {
+    const outClass = outputIsEmpty ? ' tool-expand-empty' : '';
+    const outText = outputIsEmpty ? '(no output)' : escHtml(e.output);
+    bodyHtml += `<div class="tool-expand-row${outClass}"><span class="tool-expand-key">out</span><pre class="tool-expand-code">${outText}</pre></div>`;
+  }
+
+  return `<details class="log-tool-bash">
+    <summary class="log-tool">Bash <span class="tool-detail">${summary}</span></summary>
+    <div class="tool-expand-body">${bodyHtml}</div>
+  </details>`;
+}
+
 function renderLogEntry(e, cwd) {
   if (e.type === 'user') {
     return `<div class="log-user">${escHtml(e.text)}</div>`;
@@ -255,6 +278,7 @@ function renderLogEntry(e, cwd) {
   if (e.type === 'tool_call') {
     if (e.name === 'ExitPlanMode') return '';
     if (e.name === 'TodoWrite') return renderTodoWrite(e.input?.todos);
+    if (e.name === 'Bash') return renderBashTool(e);
     return `<div class="log-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
   if (e.type === 'image') {
@@ -665,15 +689,34 @@ function getSortedJobs() {
 /**
  * Append a single log entry to the visible #log-feed without rebuilding the
  * entire detail panel. Only runs when jobId === selectedId and the feed exists.
+ * When index is provided, updates an existing element if present (for patches like Bash output).
  */
-function appendLogEntryDOM(entry, jobId) {
+function appendLogEntryDOM(entry, jobId, index) {
   if (jobId !== selectedId) return;
   const feed = document.getElementById('log-feed');
   if (!feed) return;
-  const html = renderLogEntry(entry, jobs[jobId]?.worktreePath ?? jobs[jobId]?.cwd);
+  let html = renderLogEntry(entry, jobs[jobId]?.worktreePath ?? jobs[jobId]?.cwd);
   if (!html) return;
+  // Inject data-log-index into the root element so we can find it for updates
+  if (index !== undefined) {
+    html = html.replace(/^(<\w+)/, `$1 data-log-index="${index}"`);
+  }
+  // If element with this index already exists, update it in-place
+  if (index !== undefined) {
+    const existing = feed.querySelector(`[data-log-index="${index}"]`);
+    if (existing) {
+      const wasOpen = existing.tagName === 'DETAILS' ? existing.open : existing.querySelector('details')?.open;
+      existing.outerHTML = html;
+      if (wasOpen) {
+        const updated = feed.querySelector(`[data-log-index="${index}"]`);
+        const details = updated?.tagName === 'DETAILS' ? updated : updated?.querySelector('details');
+        if (details) details.open = true;
+      }
+      return;
+    }
+  }
   // Remove the "No log entries yet" placeholder on first real entry
-  if (!feed.querySelector('.log-text, .log-user, .log-tool, .log-image')) {
+  if (!feed.querySelector('.log-text, .log-user, .log-tool, .log-image, .log-tool-bash')) {
     feed.innerHTML = '';
   }
   const wasAtBottom = (feed.scrollHeight - feed.clientHeight - feed.scrollTop) <= 80;
@@ -729,7 +772,7 @@ function initSSE() {
     // Keep the local log array in sync (sparse-safe)
     while (job.log.length <= index) job.log.push(null);
     job.log[index] = entry;
-    appendLogEntryDOM(entry, jobId);
+    appendLogEntryDOM(entry, jobId, index);
     // Re-sort sidebar when a new user message arrives (followup changes sort key)
     if (entry.type === 'user') renderList(getSortedJobs());
   });

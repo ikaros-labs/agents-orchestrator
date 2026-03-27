@@ -226,6 +226,8 @@ async function runQueryStream(
   opts: { collectPlanText?: boolean; captureResult?: boolean } = {}
 ): Promise<string[]> {
   const planTexts: string[] = [];
+  // Maps tool_use_id → log entry index so we can patch with output later
+  const toolCallIndices = new Map<string, number>();
   for await (const message of stream) {
     const ts = new Date().toISOString();
     await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
@@ -235,12 +237,30 @@ async function runQueryStream(
           store.appendLog(id, { type: "text", text: block.text, ts });
           if (opts.collectPlanText) planTexts.push(block.text);
         } else if ("name" in block) {
-          store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, ts });
+          const toolUseId: string | undefined = (block as any).id;
+          store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, toolUseId, ts });
+          if (toolUseId) {
+            const job = store.getJob(id);
+            if (job) toolCallIndices.set(toolUseId, job.log.length - 1);
+          }
         } else if ((block as any).type === "image") {
           const b = block as any;
           if (b.source?.type === "base64") {
             const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
             store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+          }
+        }
+      }
+    } else if (message.type === "user" && message.message?.content) {
+      for (const block of message.message.content) {
+        if ((block as any).type === "tool_result") {
+          const toolUseId: string = (block as any).tool_use_id;
+          const index = toolCallIndices.get(toolUseId);
+          if (index !== undefined) {
+            const raw = (block as any).content;
+            const output = typeof raw === "string" ? raw
+              : Array.isArray(raw) ? raw.map((c: any) => c.text ?? "").join("") : "";
+            store.patchLog(id, index, { output });
           }
         }
       }
