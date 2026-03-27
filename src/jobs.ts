@@ -6,6 +6,7 @@ import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sd
 
 const activeControllers = new Map<string, AbortController>();
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { basename, extname, join } from "node:path";
@@ -14,6 +15,43 @@ import * as store from "./store.ts";
 import type { Job } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
+
+// ── Settings-based allow list ────────────────────────────────────────────────
+// Read permissions.allow from user and project settings files once at startup.
+// makeCanUseTool uses this to auto-approve tools that match an allow entry,
+// mirroring Claude Code's own permission system so skill allowed-tools work.
+
+function loadSettingsAllowList(): string[] {
+  const entries: string[] = [];
+  for (const p of [
+    join(homedir(), ".claude", "settings.json"),
+    join(process.cwd(), ".claude", "settings.json"),
+  ]) {
+    try {
+      const raw = JSON.parse(readFileSync(p, "utf8"));
+      if (Array.isArray(raw?.permissions?.allow)) entries.push(...raw.permissions.allow);
+    } catch { /* missing or unparseable — skip */ }
+  }
+  return entries;
+}
+
+const settingsAllowList = loadSettingsAllowList();
+
+/** Returns true if (toolName, input) matches a settings allow entry. */
+function isSettingsAllowed(toolName: string, input: Record<string, unknown>): boolean {
+  return settingsAllowList.some((entry) => {
+    // "Bash(prefix:*)" — match bash commands starting with the given prefix
+    const bashMatch = entry.match(/^Bash\((.+?):\*\)$/);
+    if (bashMatch) {
+      if (toolName !== "Bash") return false;
+      const prefix = bashMatch[1];
+      const cmd = String(input.command ?? "");
+      return cmd === prefix || cmd.startsWith(prefix + " ");
+    }
+    // Plain tool name with no argument restriction
+    return entry === toolName;
+  });
+}
 
 // ── Directory constants ──────────────────────────────────────────────────────
 
@@ -176,6 +214,12 @@ function makeCanUseTool(id: string): CanUseTool {
 
     // Auto-approve attach_files — it only copies files for display, no confirmation needed.
     if (toolName === "mcp__orchestrator__attach_files") {
+      return { behavior: "allow", updatedInput: input };
+    }
+
+    // Auto-approve tools that match the project/user settings allow list.
+    // This makes skill allowed-tools (e.g. Bash(playwright-cli:*)) work for agents.
+    if (isSettingsAllowed(toolName, input)) {
       return { behavior: "allow", updatedInput: input };
     }
 
