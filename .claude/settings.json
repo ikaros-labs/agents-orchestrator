@@ -4,7 +4,8 @@
       "Bash(git:*)",
       "Bash(./server.sh*)",
       "Bash(./dev-server.sh*)",
-      "Bash(gh:*)"
+      "Bash(gh:*)",
+      "Skill(playwright-cli)"
     ]
   }
 }
