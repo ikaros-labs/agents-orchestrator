@@ -234,36 +234,17 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 
 /* ── Mobile layout (≤ 768px) ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  /* Single-panel slide navigation: sidebar ↔ content-area */
-  .main {
-    position: relative;
-    overflow: hidden;
-  }
-  .sidebar {
-    width: 100%;
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    transform: translateX(0);
-    transition: transform 0.2s ease;
-    z-index: 1;
-    border-right: none;
-  }
-  /* The content-area slides as one unit — no !important tricks needed */
-  .content-area {
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    width: 100%;
-    transform: translateX(100%);
-    transition: transform 0.2s ease;
-    z-index: 2;
-    overflow-y: auto;
-  }
-  .main.mobile-detail-active .sidebar       { transform: translateX(-100%); }
-  .main.mobile-detail-active .content-area  { transform: translateX(0); }
+  /* Single-panel layout: show sidebar OR content-area, never both.
+     Using display toggle instead of transforms — transforms have
+     a known iOS Safari clipping bug with overflow:hidden parents. */
+  .sidebar { border-right: none; }
+  .content-area { display: none; flex-direction: column; }
 
-  /* Panels inside content-area fill full height on mobile */
-  .new-task-panel, .detail { min-height: 100%; }
-  .new-task-panel { justify-content: flex-start; padding-top: 24px; }
+  .main.mobile-detail-active .sidebar      { display: none; }
+  .main.mobile-detail-active .content-area { display: flex; }
+
+  /* New-task panel: top-aligned and scrollable on mobile */
+  .new-task-panel { justify-content: flex-start; padding-top: 24px; overflow-y: auto; }
 
   /* Back button */
   .mobile-back-btn {
@@ -277,7 +258,6 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
     font-weight: 600;
     padding: 8px 0;
     cursor: pointer;
-    margin-right: 12px;
     flex-shrink: 0;
   }
 
@@ -302,27 +282,10 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
   #submit-btn {
     min-height: 44px;
   }
-  .job-item {
-    padding: 16px;
-  }
-
-  /* Job prompt: allow full width */
-  .job-prompt {
-    max-width: none;
-  }
-
-  /* Plan card: less cramped vertically */
-  .plan-card-body {
-    max-height: 60vh;
-  }
-
-  /* Collapse verbose job header metadata — keep only badge + action buttons */
-  .detail-meta span {
-    display: none;
-  }
-
-  /* Hide keyboard hint on mobile (no keyboard) */
+  .job-item { padding: 16px; }
+  .job-prompt { max-width: none; }
+  .plan-card-body { max-height: 60vh; }
+  .detail-meta span { display: none; }
   .kbd-hint { display: none; }
-
   .new-task-heading { font-size: 22px; }
 }
