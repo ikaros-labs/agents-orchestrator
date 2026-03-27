@@ -34,7 +34,7 @@ After finishing a task, start a dev server to test your changes:
 ./dev-server.sh /path/to/other-worktree  # start from a specific worktree
 ```
 
-This picks a random port in the 3100–19999 range, installs deps, and starts bun in watch mode. The URL is printed on startup. PID is stored in `/tmp/agents-orchestrator-dev.pid`; logs go to `/tmp/agents-orchestrator-dev.log`.
+This picks a random port in the 3100–19999 range, installs deps, and starts bun in watch mode. The URL is printed on startup.
 
 ## API
 
