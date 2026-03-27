@@ -45,6 +45,7 @@ const EXT_CONTENT_TYPE: Record<string, string> = {
   png: "image/png", gif: "image/gif", webp: "image/webp",
   pdf: "application/pdf",
   txt: "text/plain", html: "text/html", csv: "text/csv", xml: "text/xml",
+  mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
 };
 
 // ── Server ───────────────────────────────────────────────────────────────────
