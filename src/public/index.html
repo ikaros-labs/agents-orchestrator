@@ -32,6 +32,19 @@
     <label class="worktree-label">
       <input type="checkbox" id="use-worktree" checked> Use worktree
     </label>
+    <div class="form-selectors-row">
+      <div class="mode-selector" id="model-selector">
+        <button class="mode-btn" data-model="claude-haiku-4-5-20251001" onclick="setModel('claude-haiku-4-5-20251001')">Haiku</button>
+        <button class="mode-btn active" data-model="claude-sonnet-4-6" onclick="setModel('claude-sonnet-4-6')">Sonnet</button>
+        <button class="mode-btn" data-model="claude-opus-4-6" onclick="setModel('claude-opus-4-6')">Opus</button>
+      </div>
+      <div class="mode-selector" id="effort-selector">
+        <button class="mode-btn" data-effort="low" onclick="setEffort('low')">Low</button>
+        <button class="mode-btn" data-effort="medium" onclick="setEffort('medium')">Mid</button>
+        <button class="mode-btn active" data-effort="high" onclick="setEffort('high')">High</button>
+        <button class="mode-btn" data-effort="max" onclick="setEffort('max')">Max</button>
+      </div>
+    </div>
     <div class="form-submit-row">
       <div class="mode-selector" id="mode-selector">
         <button class="mode-btn active" data-mode="auto" onclick="setMode('auto')">Auto</button>

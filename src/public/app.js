@@ -11,6 +11,8 @@ function goBack() { showMobilePanel('sidebar'); }
 let jobs = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
 let currentMode = 'auto';
+let currentModel = 'claude-sonnet-4-6';
+let currentEffort = 'high';
 let showArchived = false;
 
 // ── File attachment state ───────────────────────────────────────────────────
@@ -97,8 +99,22 @@ function badge(status) {
 
 function setMode(mode) {
   currentMode = mode;
-  document.querySelectorAll('.mode-btn').forEach(btn => {
+  document.querySelectorAll('#mode-selector .mode-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+}
+
+function setModel(model) {
+  currentModel = model;
+  document.querySelectorAll('#model-selector .mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.model === model);
+  });
+}
+
+function setEffort(effort) {
+  currentEffort = effort;
+  document.querySelectorAll('#effort-selector .mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.effort === effort);
   });
 }
 
@@ -167,6 +183,8 @@ function renderList(list) {
       <div class="job-item-top">
         ${badge(j.status)}
         ${j.mode && j.mode !== 'auto' ? `<span class="mode-tag mode-tag-${j.mode}">${j.mode}</span>` : ''}
+        ${j.model && j.model !== 'claude-sonnet-4-6' ? `<span class="mode-tag mode-tag-${j.model === 'claude-haiku-4-5-20251001' ? 'haiku' : 'opus'}">${j.model === 'claude-haiku-4-5-20251001' ? 'haiku' : 'opus'}</span>` : ''}
+        ${j.effort && j.effort !== 'high' ? `<span class="mode-tag mode-tag-${j.effort}">${j.effort}</span>` : ''}
         <span class="job-time">${relTime(j.createdAt)}</span>
       </div>
       <div class="job-prompt">${escHtml(j.prompt)}</div>
@@ -810,7 +828,7 @@ async function submitJob() {
     ? document.getElementById('cwd-custom').value.trim()
     : cwdSel.value;
   const useWorktree = document.getElementById('use-worktree').checked;
-  const body = cwdVal ? {prompt, tools, cwd: cwdVal, useWorktree, mode: currentMode} : {prompt, tools, useWorktree, mode: currentMode};
+  const body = cwdVal ? {prompt, tools, cwd: cwdVal, useWorktree, mode: currentMode, model: currentModel, effort: currentEffort} : {prompt, tools, useWorktree, mode: currentMode, model: currentModel, effort: currentEffort};
   if (pendingFiles.length) {
     body.images = pendingFiles.map(({ mediaType, data }) => ({ mediaType, data }));
   }

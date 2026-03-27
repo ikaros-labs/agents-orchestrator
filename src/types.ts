@@ -14,6 +14,7 @@ export const JOB_STATUS = {
 } as const satisfies Record<string, JobStatus>;
 
 export type JobMode = "auto" | "plan" | "edit";
+export type JobEffort = "low" | "medium" | "high" | "max";
 
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
@@ -35,6 +36,8 @@ export interface Job {
   id: string;
   status: JobStatus;
   mode: JobMode;
+  model: string | null;
+  effort: JobEffort | null;
   prompt: string;
   tools: string[];
   createdAt: string;

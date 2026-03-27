@@ -324,10 +324,11 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   const controller = new AbortController();
   activeControllers.set(id, controller);
+  const planJobOpts = store.getJob(id);
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...(planJobOpts?.model ? { model: planJobOpts.model } : {}), ...(planJobOpts?.effort ? { effort: planJobOpts.effort } : {}), ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     if (controller.signal.aborted) return;
@@ -346,13 +347,14 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
   console.log(`[revisePlanJob] id=${id}`);
   store.setStatus(id, "planning");
   store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
-  const inWorktree = !!store.getJob(id)?.worktreePath;
+  const revisePlanJobRef = store.getJob(id);
+  const inWorktree = !!revisePlanJobRef?.worktreePath;
   const controller = new AbortController();
   activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: feedback,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...(revisePlanJobRef?.model ? { model: revisePlanJobRef.model } : {}), ...(revisePlanJobRef?.effort ? { effort: revisePlanJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     if (controller.signal.aborted) return;
@@ -371,14 +373,15 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
   console.log(`[directExecuteJob] id=${id}`);
   store.setStatus(id, "running");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
-  const inWorktree = !!store.getJob(id)?.worktreePath;
+  const directExecJob = store.getJob(id);
+  const inWorktree = !!directExecJob?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   const controller = new AbortController();
   activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...(directExecJob?.model ? { model: directExecJob.model } : {}), ...(directExecJob?.effort ? { effort: directExecJob.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -394,13 +397,14 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
 export async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
   console.log(`[executeJob] id=${id}`);
   store.setStatus(id, "running");
-  const inWorktree = !!store.getJob(id)?.worktreePath;
+  const execJobRef = store.getJob(id);
+  const inWorktree = !!execJobRef?.worktreePath;
   const controller = new AbortController();
   activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...(sessionId ? { resume: sessionId } : {}), abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...(sessionId ? { resume: sessionId } : {}), abortController: controller, ...(execJobRef?.model ? { model: execJobRef.model } : {}), ...(execJobRef?.effort ? { effort: execJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -428,13 +432,14 @@ export async function followUpJob(id: string, prompt: string, sessionId: string 
   const promptArg = rawImages.length > 0
     ? makePrompt(prompt, rawImages, followupJobId)
     : prompt;
-  const inWorktree = !!store.getJob(id)?.worktreePath;
+  const followUpJobRef = store.getJob(id);
+  const inWorktree = !!followUpJobRef?.worktreePath;
   const controller = new AbortController();
   activeControllers.set(id, controller);
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...(followUpJobRef?.model ? { model: followUpJobRef.model } : {}), ...(followUpJobRef?.effort ? { effort: followUpJobRef.effort } : {}), ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;

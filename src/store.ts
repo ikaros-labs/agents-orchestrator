@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { InputFile, Job, JobMode, JobStatus, JobUsage, LogEntry } from "./types.ts";
+import type { InputFile, Job, JobEffort, JobMode, JobStatus, JobUsage, LogEntry } from "./types.ts";
 
 const DATA_DIR = join(homedir(), ".agent-orchestrator", "jobs");
 mkdirSync(DATA_DIR, { recursive: true });
@@ -65,6 +65,9 @@ export function loadStore(): void {
       if (job.archived === undefined) job.archived = false;
       // Migrate jobs created before usage tracking
       if (job.usage === undefined) job.usage = null;
+      // Migrate jobs created before model/effort selection
+      if (job.model === undefined) job.model = null;
+      if (job.effort === undefined) job.effort = null;
       jobs.set(job.id, job);
     } catch {
       // skip corrupt files
@@ -89,11 +92,13 @@ export function loadStore(): void {
   }
 }
 
-export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto", useWorktree: boolean = true): Job {
+export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: JobEffort | null = null): Job {
   const job: Job = {
     id,
     status: "pending",
     mode,
+    model,
+    effort,
     prompt,
     tools,
     cwd,
