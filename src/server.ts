@@ -157,7 +157,7 @@ Bun.serve({
         }));
 
         store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree, model ?? null, effort ?? null);
-        generateTitle(prompt).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
+        generateTitle(prompt, rawImages).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
           Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
         } else {
