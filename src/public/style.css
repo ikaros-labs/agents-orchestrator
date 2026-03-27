@@ -31,7 +31,8 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 #new-task-btn { display: flex; align-items: center; gap: 7px; background: #1a2a4a; color: #6b9eff; border: 1px solid #2a3a6a; border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; flex: 1; }
 #new-task-btn:hover { background: #1e3055; border-color: #3a4a7a; }
 #new-task-btn svg { flex-shrink: 0; }
-.kbd-hint { font-size: 10px; color: #445; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 3px; padding: 2px 5px; margin-left: auto; font-family: monospace; flex-shrink: 0; line-height: 1; vertical-align: middle; }
+.kbd-hint { display: inline-flex; align-items: center; gap: 1px; color: #445; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 3px; padding: 2px 5px; margin-left: auto; font-family: system-ui, sans-serif; font-size: 11px; flex-shrink: 0; line-height: 1; }
+.kbd-key { display: inline-block; line-height: 1; height: 1em; overflow: hidden; }
 
 .btn-show-archived { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: #555; border: 1px solid #2a2a2a; border-radius: 5px; padding: 5px 9px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
 .btn-show-archived:hover { color: #aaa; border-color: #444; }
