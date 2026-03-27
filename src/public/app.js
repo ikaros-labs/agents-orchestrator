@@ -8,6 +8,16 @@ function showMobilePanel(view) {
   document.body.classList.toggle('mobile-detail-active', isDetail);
 }
 function goBack() { showMobilePanel('sidebar'); }
+
+function showNewTask() {
+  selectedId = null;
+  document.querySelectorAll('.job-item').forEach(el => el.classList.remove('selected'));
+  document.getElementById('new-task-panel').classList.remove('hidden');
+  document.getElementById('detail').classList.add('hidden');
+  document.getElementById('prompt').focus();
+  if (isMobile()) showMobilePanel('detail');
+}
+
 let jobs = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
 let currentMode = 'auto';
@@ -165,11 +175,19 @@ function renderList(list) {
   const archivedCount = list.filter(j => j.archived).length;
   const hdr = document.getElementById('sidebar-header');
   if (hdr) {
-    hdr.innerHTML = (archivedCount > 0 || showArchived)
-      ? `<button class="btn-show-archived${showArchived ? ' active' : ''}" onclick="toggleShowArchived()">
-           ${showArchived ? 'Hide Archived' : `Archived (${archivedCount})`}
+    const archivedBtn = (archivedCount > 0 || showArchived)
+      ? `<button class="btn-show-archived${showArchived ? ' active' : ''}" onclick="toggleShowArchived()" title="${showArchived ? 'Hide archived' : `Archived (${archivedCount})`}">
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+           ${showArchived ? '' : archivedCount}
          </button>`
       : '';
+    hdr.innerHTML = `
+      <button id="new-task-btn" onclick="showNewTask()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New task
+        <span class="kbd-hint">⌘⇧O</span>
+      </button>
+      ${archivedBtn}`;
   }
 
   const visible = showArchived ? list : list.filter(j => !j.archived);
@@ -623,6 +641,8 @@ function removeReviseImage(jobId, index) { removeJobImage(reviseImages, 'revise'
 async function selectJob(id) {
   selectedId = id;
   document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(id)));
+  document.getElementById('new-task-panel').classList.add('hidden');
+  document.getElementById('detail').classList.remove('hidden');
   const job = await fetch('/jobs/' + id).then(r => r.json());
   jobs[id] = job;
   renderDetailFresh = true; // fresh view, always scroll to bottom
@@ -845,7 +865,12 @@ async function submitJob() {
     selectedId = id;
     // Fetch and show the new job immediately; SSE will deliver all subsequent updates
     const job = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
-    if (job) { jobs[id] = job; renderDetailFresh = true; renderDetail(job); if (isMobile()) showMobilePanel('detail'); }
+    if (job) {
+      jobs[id] = job;
+      document.getElementById('new-task-panel').classList.add('hidden');
+      document.getElementById('detail').classList.remove('hidden');
+      renderDetailFresh = true; renderDetail(job); if (isMobile()) showMobilePanel('detail');
+    }
   } finally {
     btn.disabled = false; btn.textContent = 'Run Agent';
   }
@@ -856,6 +881,11 @@ document.getElementById('prompt').addEventListener('keydown', e => {
 });
 
 document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
+    e.preventDefault();
+    showNewTask();
+    return;
+  }
   if (e.key === 'Tab' && e.shiftKey) {
     e.preventDefault();
     const modes = ['auto', 'plan', 'edit'];
