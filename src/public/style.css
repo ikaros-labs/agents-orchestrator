@@ -13,6 +13,9 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 #submit-btn:hover { background: #1d4ed8; }
 #submit-btn:disabled { background: #333; color: #666; cursor: default; }
 
+/* ── Content area (wraps new-task-panel + detail) ─────────────────────────── */
+.content-area { flex: 1; display: flex; overflow: hidden; }
+
 /* ── New task panel (main area form) ──────────────────────────────────────── */
 .new-task-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; overflow-y: auto; gap: 28px; }
 /* Back button is hidden on desktop; on mobile it aligns to the left edge of the panel */
@@ -231,7 +234,7 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 
 /* ── Mobile layout (≤ 768px) ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  /* Single-panel slide navigation */
+  /* Single-panel slide navigation: sidebar ↔ content-area */
   .main {
     position: relative;
     overflow: hidden;
@@ -239,32 +242,28 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
   .sidebar {
     width: 100%;
     position: absolute;
-    inset: 0;
+    top: 0; left: 0; right: 0; bottom: 0;
     transform: translateX(0);
     transition: transform 0.2s ease;
     z-index: 1;
     border-right: none;
   }
-  /* On mobile both panels are absolutely positioned off-screen;
-     override desktop display:none from .hidden so transitions work */
-  .detail, .new-task-panel {
-    display: flex !important;
+  /* The content-area slides as one unit — no !important tricks needed */
+  .content-area {
     position: absolute;
-    inset: 0;
+    top: 0; left: 0; right: 0; bottom: 0;
     width: 100%;
     transform: translateX(100%);
     transition: transform 0.2s ease;
     z-index: 2;
     overflow-y: auto;
   }
-  .new-task-panel {
-    justify-content: flex-start;
-    padding-top: 40px;
-  }
-  .main.mobile-detail-active .sidebar { transform: translateX(-100%); }
-  /* Slide in whichever panel is not hidden */
-  .main.mobile-detail-active .detail:not(.hidden)       { transform: translateX(0); }
-  .main.mobile-detail-active .new-task-panel:not(.hidden) { transform: translateX(0); }
+  .main.mobile-detail-active .sidebar       { transform: translateX(-100%); }
+  .main.mobile-detail-active .content-area  { transform: translateX(0); }
+
+  /* Panels inside content-area fill full height on mobile */
+  .new-task-panel, .detail { min-height: 100%; }
+  .new-task-panel { justify-content: flex-start; padding-top: 24px; }
 
   /* Back button */
   .mobile-back-btn {
