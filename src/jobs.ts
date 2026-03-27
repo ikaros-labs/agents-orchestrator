@@ -149,9 +149,6 @@ export function stopJob(id: string): boolean {
   if (!controller && !jobApprovals?.size) return false;
 
   if (jobApprovals) {
-    for (const { resolve } of jobApprovals.values()) {
-      resolve({ behavior: "deny", message: "Job stopped by user" });
-    }
     jobApprovals.clear();
     pendingToolApprovals.delete(id);
   }
