@@ -36,6 +36,14 @@ After finishing a task, use `dev-server.sh` — it starts a throwaway dev server
 
 This picks a random port in the 3100–19999 range, installs deps, starts bun in watch mode, and auto-exits after 4 hours. The URL is printed on startup.
 
+### Browser/UI testing
+
+Use the `playwright-cli` skill for any browser-based testing or UI interaction. Run it directly — do not invoke via `npx` or `bunx`:
+
+```bash
+playwright-cli <args>
+```
+
 ### General notes
 
 - Before looking up or using anything from `node_modules` (imports, types, CLI tools), always run `bun i` first to ensure dependencies are installed.
