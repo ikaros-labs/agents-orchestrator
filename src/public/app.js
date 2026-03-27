@@ -526,7 +526,7 @@ function renderDetail(job) {
         <span>Tools: ${job.tools.join(', ')}</span>
         ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
         ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
-        ${job.usage ? `<span title="Token and cost usage for this job">$${job.usage.costUSD.toFixed(4)} · ${job.usage.totalTokens.toLocaleString()} tokens (${(job.usage.totalTokens / 200000 * 100).toFixed(1)}%)</span>` : ''}
+        ${job.usage ? `<span title="Token and cost usage for this job">$${job.usage.costUSD.toFixed(1)} · ${job.usage.totalTokens.toLocaleString()} tokens (${(job.usage.totalTokens / 200000 * 100).toFixed(1)}%)</span>` : ''}
         <div class="detail-actions">${stopBtnHtml}${archiveBtnHtml}</div>
       </div>
     </div>
