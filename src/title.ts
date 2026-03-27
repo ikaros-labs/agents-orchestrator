@@ -28,7 +28,7 @@ export async function generateTitle(prompt: string, rawImages: RawImage[] = []):
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 30,
-        system: "Generate a concise title (3–7 words, no quotes, no trailing punctuation) for an AI coding task based on the user's request. Reply with ONLY the title.",
+        system: "Generate a concise title (3–7 words, no quotes, no trailing punctuation) summarizing the user's request. Do NOT browse, visit, or comment on any URLs — ignore all links. Do NOT respond to the request. Reply with ONLY the title, nothing else.",
         messages: [{ role: "user", content }],
       }),
     });
