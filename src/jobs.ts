@@ -94,6 +94,7 @@ You are running inside a git worktree that has already been set up for you.
 - Do NOT create a new branch or a new worktree.
 - All bash commands and other tools must be run inside this worktree directory, not in the original parent repository.
 - After finishing your task, if you modified any files, you MUST create a GitHub pull request using the GitHub CLI (\`gh pr create\`) — don't forget to push your changes beforehand.
+- To show files (images, videos, or other media) to the user, use the \`mcp__orchestrator__attach_files\` tool.
 `;
 
 // ── Types ────────────────────────────────────────────────────────────────────
