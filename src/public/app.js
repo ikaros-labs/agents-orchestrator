@@ -899,7 +899,7 @@ document.getElementById('prompt').addEventListener('paste', async (e) => {
 
 window.addEventListener('resize', () => {
   const main = document.querySelector('.main');
-  const active = isMobile() && mobileView === 'detail' && selectedId;
+  const active = isMobile() && mobileView === 'detail';
   main.classList.toggle('mobile-detail-active', !!active);
   document.body.classList.toggle('mobile-detail-active', !!active);
 });

@@ -15,6 +15,8 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 
 /* ── New task panel (main area form) ──────────────────────────────────────── */
 .new-task-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; overflow-y: auto; gap: 28px; }
+/* Back button is hidden on desktop; on mobile it aligns to the left edge of the panel */
+.new-task-panel .mobile-back-btn { align-self: flex-start; }
 .new-task-panel.hidden { display: none; }
 .detail.hidden { display: none; }
 .new-task-heading { font-size: 26px; font-weight: 600; color: #fff; letter-spacing: -0.01em; }
