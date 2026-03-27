@@ -185,7 +185,7 @@ function renderList(list) {
       <button id="new-task-btn" onclick="showNewTask()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         New task
-        <span class="kbd-hint">Alt+N</span>
+        <span class="kbd-hint">⌘⇧O</span>
       </button>
       ${archivedBtn}`;
   }
@@ -881,7 +881,7 @@ document.getElementById('prompt').addEventListener('keydown', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.key === 'n') {
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
     e.preventDefault();
     showNewTask();
     return;
