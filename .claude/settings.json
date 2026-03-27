@@ -5,7 +5,8 @@
       "Bash(./server.sh*)",
       "Bash(./dev-server.sh*)",
       "Bash(gh:*)",
-      "Skill(playwright-cli)"
+      "Skill(playwright-cli)",
+      "Bash(playwright-cli:*)"
     ]
   }
 }
