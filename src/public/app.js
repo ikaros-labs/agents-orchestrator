@@ -693,8 +693,15 @@ function initSSE() {
     renderList(list); // already server-sorted
     updateCwdSelect(list);
     const hashId = location.hash.slice(1);
-    if (hashId && jobs[hashId]) {
-      selectJob(hashId);
+    if (hashId && jobs[hashId] && !selectedId) {
+      // First load: restore from hash using snapshot data (no extra fetch)
+      selectedId = hashId;
+      document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(hashId)));
+      document.getElementById('new-task-panel').classList.add('hidden');
+      document.getElementById('detail').classList.remove('hidden');
+      renderDetailFresh = true;
+      renderDetail(jobs[hashId]);
+      if (isMobile()) showMobilePanel('detail');
     } else if (selectedId && jobs[selectedId]) {
       renderDetail(jobs[selectedId]);
     }
@@ -913,5 +920,12 @@ window.addEventListener('resize', () => {
   main.classList.toggle('mobile-detail-active', !!active);
   document.body.classList.toggle('mobile-detail-active', !!active);
 });
+
+// Eagerly show the detail panel if a job hash is in the URL, to avoid the
+// flash of the new-task form before the SSE snapshot arrives.
+if (location.hash.slice(1)) {
+  document.getElementById('new-task-panel').classList.add('hidden');
+  document.getElementById('detail').classList.remove('hidden');
+}
 
 initSSE();
