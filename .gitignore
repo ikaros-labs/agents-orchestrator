@@ -3,3 +3,4 @@ logs
 .env
 data
 .playwright-cli
+.dev-server.pid
