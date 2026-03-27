@@ -36,7 +36,7 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .badge-pending { background: #292210; color: #ca8a04; }
 .badge-planning { background: #1a1535; color: #a78bfa; }
 .badge-awaiting_approval { background: #2a1f00; color: #fb923c; }
-.badge-awaiting_tool_approval { background: #1a1035; color: #c084fc; }
+.badge-awaiting_tool_approval { background: #2a1a00; color: #f59e0b; }
 .badge-awaiting_user_question { background: #0d1f2e; color: #38bdf8; }
 .badge-running { background: #0d2035; color: #38bdf8; }
 .badge-completed { background: #0d2218; color: #22c55e; }

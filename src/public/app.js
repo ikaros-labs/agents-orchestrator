@@ -83,12 +83,12 @@ function relTime(iso) {
 }
 
 // Statuses that display an animated spinner in the badge
-const SPINNER_STATUSES = new Set(['running', 'planning', 'awaiting_tool_approval', 'awaiting_user_question']);
+const SPINNER_STATUSES = new Set(['running', 'planning', 'awaiting_user_question']);
 
 function badge(status) {
   const labels = {
     awaiting_approval: 'needs approval',
-    awaiting_tool_approval: 'tool approval',
+    awaiting_tool_approval: '⚠ tool approval',
     awaiting_user_question: 'question',
     stopped: 'stopped',
   };
