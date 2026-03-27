@@ -51,6 +51,14 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .log-text { font-size: 13px; color: #c8c8c8; line-height: 1.6; word-break: break-word; }
 .log-tool { display: inline-flex; align-items: center; gap: 6px; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 4px; padding: 3px 10px; font-size: 11px; font-family: monospace; color: #818cf8; align-self: flex-start; }
 .log-tool::before { content: "⚙"; font-size: 10px; }
+.log-todo { display: flex; flex-direction: column; gap: 3px; align-self: stretch; background: #0f1117; border: 1px solid #2a2a4a; border-radius: 6px; padding: 8px 12px; font-size: 12px; }
+.todo-item { display: flex; align-items: baseline; gap: 8px; }
+.todo-icon { font-size: 11px; flex-shrink: 0; }
+.todo-content { color: #c8c8c8; line-height: 1.5; }
+.todo-pending .todo-icon { color: #4b5563; }
+.todo-in_progress .todo-icon { color: #f59e0b; }
+.todo-completed .todo-icon { color: #22c55e; }
+.todo-completed .todo-content { color: #6b7280; text-decoration: line-through; }
 .result-box { margin: 0 20px 16px; padding: 10px 14px; border-radius: 6px; font-size: 13px; }
 .result-success { background: #0d2218; border: 1px solid #166534; color: #4ade80; }
 .result-error { background: #2a0d0d; border: 1px solid #7f1d1d; color: #f87171; }
