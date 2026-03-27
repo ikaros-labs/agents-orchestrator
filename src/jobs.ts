@@ -1,14 +1,14 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 
 // ── Active job AbortControllers ──────────────────────────────────────────────
 // One AbortController per running job. Used by stopJob() to cancel the SDK query.
 
 const activeControllers = new Map<string, AbortController>();
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { join } from "node:path";
+import { basename, extname, join } from "node:path";
 import { homedir } from "node:os";
 import * as store from "./store.ts";
 import type { Job } from "./types.ts";
@@ -50,7 +50,44 @@ export const MEDIA_TYPE_EXT: Record<string, string> = {
   "application/xml": "xml",
 };
 
-export const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", "ExitPlanMode"];
+export const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", "ExitPlanMode", "mcp__orchestrator__attach_files"];
+
+// ── AttachFiles MCP tool ─────────────────────────────────────────────────────
+
+const EXT_TO_MIME: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", webp: "image/webp",
+  pdf: "application/pdf",
+  mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
+};
+
+import { z } from "zod";
+
+function makeAttachFilesServer(jobId: string) {
+  return createSdkMcpServer({
+    name: "orchestrator",
+    tools: [
+      tool(
+        "attach_files",
+        `Expose local files so the user can view or download them. Returns a public URL for each file.
+Use the returned URLs in your markdown response — inline images with ![alt](url), download links with [filename](url).`,
+        { paths: z.array(z.string()).describe("Absolute file paths to expose") },
+        async ({ paths }) => {
+          const results: string[] = [];
+          for (const filePath of paths) {
+            const ext = extname(filePath).slice(1).toLowerCase();
+            const filename = `${crypto.randomUUID()}.${ext || "bin"}`;
+            const dir = `${IMAGES_DIR}/${jobId}`;
+            await mkdir(dir, { recursive: true });
+            await writeFile(`${dir}/${filename}`, await readFile(filePath));
+            results.push(`${basename(filePath)}: /images/${jobId}/${filename}`);
+          }
+          return { content: [{ type: "text" as const, text: results.join("\n") }] };
+        }
+      ),
+    ],
+  });
+}
 
 const WORKTREE_SYSTEM_PROMPT_APPEND = `
 You are running inside a git worktree that has already been set up for you.
@@ -138,6 +175,11 @@ function makeCanUseTool(id: string): CanUseTool {
     // Execution is triggered separately via executeJob() once the user approves the plan.
     if (toolName === "ExitPlanMode") {
       return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
+    }
+
+    // Auto-approve attach_files — it only copies files for display, no confirmation needed.
+    if (toolName === "mcp__orchestrator__attach_files") {
+      return { behavior: "allow", updatedInput: input };
     }
 
     store.addPendingTool(id, toolUseID, toolName, input, agentID);
@@ -327,7 +369,7 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, abortController: controller, ...worktreeSystemPrompt(useWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     if (controller.signal.aborted) return;
@@ -352,7 +394,7 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
   try {
     const stream = query({
       prompt: feedback,
-      options: { allowedTools: tools, permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "plan", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     if (controller.signal.aborted) return;
@@ -378,7 +420,7 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(effectiveCwd ? { cwd: effectiveCwd } : {}) },
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -400,7 +442,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   try {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], ...(sessionId ? { resume: sessionId } : {}), abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, ...(sessionId ? { resume: sessionId } : {}), abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
@@ -434,7 +476,7 @@ export async function followUpJob(id: string, prompt: string, sessionId: string 
   try {
     const stream = query({
       prompt: promptArg as any,
-      options: { permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
+      options: { allowedTools: [...tools, "mcp__orchestrator__attach_files"], permissionMode: "acceptEdits", canUseTool: makeCanUseTool(id), settingSources: ["user", "project", "local"], mcpServers: { orchestrator: makeAttachFilesServer(id) }, resume: sessionId, abortController: controller, ...worktreeSystemPrompt(inWorktree), ...(cwd ? { cwd } : {}) },
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
