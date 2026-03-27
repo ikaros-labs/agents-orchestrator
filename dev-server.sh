@@ -24,9 +24,24 @@ fi
 bun i
 
 PORT=$((RANDOM + 3100))
-echo "Starting dev server on port $PORT..."
-PORT=$PORT HOST=100.81.181.2 timeout 4h bun --env-file=/root/agents-orchestrator/.env run dev &
-NEW_PID=$!
-echo "$NEW_PID" > "$PID_FILE"
+LOG_FILE=$(mktemp /tmp/dev-server-XXXXXX.log)
 
-echo "Dev server running (PID $NEW_PID) at http://100.81.181.2:$PORT"
+HOST=100.81.181.2 PORT=$PORT timeout 4h bun --env-file=/root/agents-orchestrator/.env run dev > "$LOG_FILE" 2>&1 &
+PID=$!
+echo "$PID" > "$PID_FILE"
+
+# Wait for the server to print its URL (up to 10s)
+for i in $(seq 1 20); do
+  if grep -q "Listening on" "$LOG_FILE" 2>/dev/null; then
+    break
+  fi
+  if ! kill -0 "$PID" 2>/dev/null; then
+    echo "Server failed to start:" >&2
+    cat "$LOG_FILE" >&2
+    exit 1
+  fi
+  sleep 0.5
+done
+
+echo "Dev server running (PID $PID) — logs: $LOG_FILE"
+grep "Listening on" "$LOG_FILE" | tail -1
