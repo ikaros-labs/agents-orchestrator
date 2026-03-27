@@ -836,6 +836,15 @@ async function submitJob() {
 document.getElementById('prompt').addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitJob();
 });
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Tab' && e.shiftKey) {
+    e.preventDefault();
+    const modes = ['auto', 'plan', 'edit'];
+    const next = modes[(modes.indexOf(currentMode) + 1) % modes.length];
+    setMode(next);
+  }
+});
 document.getElementById('prompt').addEventListener('paste', async (e) => {
   await handlePastedFiles(e, pendingFiles, renderFilePreviews);
 });
