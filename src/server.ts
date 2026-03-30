@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import * as store from "./store.ts";
 import * as jobs from "./jobs.ts";
+import { generateTitle } from "./title.ts";
 import { CreateJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
 import type { JobMode } from "./types.ts";
 
@@ -156,6 +157,7 @@ Bun.serve({
         }));
 
         store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree, model ?? null, effort ?? null);
+        generateTitle(prompt, rawImages).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
           Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
         } else if (mode === "sandbox") {
@@ -241,13 +243,13 @@ Bun.serve({
       if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;
-      const { toolUseID } = parsed.data;
+      const { toolUseID, reason } = parsed.data;
       if (!jobs.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
       const pendingTool = job.pendingTools.find(t => t.toolUseID === toolUseID);
       console.log(`[reject-tool] id=${id} tool=${pendingTool?.name} toolUseID=${toolUseID} → denied`);
       store.removePendingTool(id, toolUseID);
       if (job.pendingTools.length === 0) store.setStatus(id, "running");
-      jobs.resolveToolApproval(id, toolUseID, { behavior: "deny", message: "User denied this tool call" });
+      jobs.resolveToolApproval(id, toolUseID, { behavior: "deny", message: reason?.trim() || "User denied this tool call" });
       return Response.json({ id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
     },
 

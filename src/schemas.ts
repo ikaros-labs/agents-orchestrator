@@ -25,6 +25,7 @@ export const ReviseSchema = z.object({
 
 export const ToolActionSchema = z.object({
   toolUseID: z.string().min(1, "toolUseID is required"),
+  reason: z.string().optional(),
 });
 
 export const AnswerQuestionSchema = z.object({

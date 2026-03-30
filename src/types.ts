@@ -19,7 +19,7 @@ export type JobEffort = "low" | "medium" | "high" | "max";
 export type LogEntry =
   | { type: "text"; text: string; ts: string }
   | { type: "user"; text: string; ts: string }
-  | { type: "tool_call"; name: string; input?: Record<string, unknown>; ts: string }
+  | { type: "tool_call"; name: string; input?: Record<string, unknown>; toolUseId?: string; output?: string; ts: string }
   | { type: "image"; mediaType: string; url: string; ts: string };
 
 export interface InputFile {
@@ -39,6 +39,7 @@ export interface Job {
   model: string | null;
   effort: JobEffort | null;
   prompt: string;
+  title: string | null;
   tools: string[];
   createdAt: string;
   startedAt: string | null;

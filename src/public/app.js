@@ -8,6 +8,17 @@ function showMobilePanel(view) {
   document.body.classList.toggle('mobile-detail-active', isDetail);
 }
 function goBack() { showMobilePanel('sidebar'); }
+
+function showNewTask() {
+  selectedId = null;
+  history.replaceState(null, '', location.pathname);
+  document.querySelectorAll('.job-item').forEach(el => el.classList.remove('selected'));
+  document.getElementById('new-task-panel').classList.remove('hidden');
+  document.getElementById('detail').classList.add('hidden');
+  document.getElementById('prompt').focus();
+  if (isMobile()) showMobilePanel('detail');
+}
+
 let jobs = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
 let currentMode = 'auto';
@@ -83,13 +94,13 @@ function relTime(iso) {
 }
 
 // Statuses that display an animated spinner in the badge
-const SPINNER_STATUSES = new Set(['running', 'planning', 'awaiting_user_question']);
+const SPINNER_STATUSES = new Set(['running', 'planning']);
 
 function badge(status) {
   const labels = {
     awaiting_approval: 'needs approval',
     awaiting_tool_approval: '⚠ tool approval',
-    awaiting_user_question: 'question',
+    awaiting_user_question: '⚠ question',
     stopped: 'stopped',
   };
   const label = labels[status] ?? status;
@@ -165,11 +176,19 @@ function renderList(list) {
   const archivedCount = list.filter(j => j.archived).length;
   const hdr = document.getElementById('sidebar-header');
   if (hdr) {
-    hdr.innerHTML = (archivedCount > 0 || showArchived)
-      ? `<button class="btn-show-archived${showArchived ? ' active' : ''}" onclick="toggleShowArchived()">
-           ${showArchived ? 'Hide Archived' : `Archived (${archivedCount})`}
+    const archivedBtn = (archivedCount > 0 || showArchived)
+      ? `<button class="btn-show-archived${showArchived ? ' active' : ''}" onclick="toggleShowArchived()" title="${showArchived ? 'Hide archived' : `Archived (${archivedCount})`}">
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+           ${showArchived ? '' : archivedCount}
          </button>`
       : '';
+    hdr.innerHTML = `
+      <button id="new-task-btn" onclick="showNewTask()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New task
+        <span class="kbd-hint"><span class="kbd-key">⌘</span><span class="kbd-key">⇧</span><span class="kbd-key">O</span></span>
+      </button>
+      ${archivedBtn}`;
   }
 
   const visible = showArchived ? list : list.filter(j => !j.archived);
@@ -187,7 +206,7 @@ function renderList(list) {
         ${j.effort && j.effort !== 'high' ? `<span class="mode-tag mode-tag-${j.effort}">${j.effort}</span>` : ''}
         <span class="job-time">${relTime(j.createdAt)}</span>
       </div>
-      <div class="job-prompt">${escHtml(j.prompt)}</div>
+      <div class="job-prompt">${escHtml(j.title || j.prompt)}</div>
       ${j.images && j.images.length ? `<div class="job-image-badge">📎 ${j.images.length} file${j.images.length > 1 ? 's' : ''}</div>` : ''}
       ${j.cwd ? `<div style="font-size:10px;color:#555;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.cwd)}</div>` : ''}
     </div>
@@ -227,6 +246,29 @@ function renderTodoWrite(todos) {
   return `<div class="log-todo">${items}</div>`;
 }
 
+function renderBashTool(e) {
+  const desc = e.input?.description ? escHtml(String(e.input.description)) : null;
+  const cmd = e.input?.command ? escHtml(String(e.input.command)) : null;
+  const summary = desc || (cmd ? cmd.slice(0, 80) : 'Bash');
+  const hasOutput = e.output !== undefined && e.output !== null;
+  const outputIsEmpty = !e.output || e.output === '(Bash completed with no output)';
+
+  let bodyHtml = '';
+  if (cmd) {
+    bodyHtml += `<div class="tool-expand-row"><span class="tool-expand-key">cmd</span><pre class="tool-expand-code">${cmd}</pre></div>`;
+  }
+  if (hasOutput) {
+    const outClass = outputIsEmpty ? ' tool-expand-empty' : '';
+    const outText = outputIsEmpty ? '(no output)' : escHtml(e.output);
+    bodyHtml += `<div class="tool-expand-row${outClass}"><span class="tool-expand-key">out</span><pre class="tool-expand-code">${outText}</pre></div>`;
+  }
+
+  return `<details class="log-tool-bash">
+    <summary class="log-tool">Bash <span class="tool-detail">${summary}</span></summary>
+    <div class="tool-expand-body">${bodyHtml}</div>
+  </details>`;
+}
+
 function renderLogEntry(e, cwd) {
   if (e.type === 'user') {
     return `<div class="log-user">${escHtml(e.text)}</div>`;
@@ -237,6 +279,7 @@ function renderLogEntry(e, cwd) {
   if (e.type === 'tool_call') {
     if (e.name === 'ExitPlanMode') return '';
     if (e.name === 'TodoWrite') return renderTodoWrite(e.input?.todos);
+    if (e.name === 'Bash') return renderBashTool(e);
     return `<div class="log-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
   if (e.type === 'image') {
@@ -472,7 +515,8 @@ function renderDetail(job) {
           ${inputRows ? `<div class="tool-input-detail">${inputRows}</div>` : ''}
           <div class="tool-approval-actions">
             <button class="btn-approve" onclick="approveToolUse('${job.id}', '${toolUseID}')">Approve</button>
-            <button class="btn-reject" onclick="rejectToolUse('${job.id}', '${toolUseID}')">Deny</button>
+            <input type="text" class="tool-deny-reason" placeholder="Reason for denying (optional)">
+            <button class="btn-reject" onclick="rejectToolUse('${job.id}', '${toolUseID}', this)">Deny</button>
           </div>
         </div>`;
       }).join('')
@@ -526,7 +570,7 @@ function renderDetail(job) {
         <span>Tools: ${job.tools.join(', ')}</span>
         ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
         ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
-        ${job.usage ? `<span title="Token and cost usage for this job">$${job.usage.costUSD.toFixed(4)} · ${job.usage.totalTokens.toLocaleString()} tokens (${(job.usage.totalTokens / 200000 * 100).toFixed(1)}%)</span>` : ''}
+        ${job.usage ? `<span title="Token and cost usage for this job">$${job.usage.costUSD.toFixed(1)} · ${job.usage.totalTokens.toLocaleString()} tokens (${(job.usage.totalTokens / 200000 * 100).toFixed(1)}%)</span>` : ''}
         <div class="detail-actions">${stopBtnHtml}${archiveBtnHtml}</div>
       </div>
     </div>
@@ -622,7 +666,10 @@ function removeReviseImage(jobId, index) { removeJobImage(reviseImages, 'revise'
 // ── API actions ────────────────────────────────────────────────────────────
 async function selectJob(id) {
   selectedId = id;
+  history.replaceState(null, '', '#' + id);
   document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(id)));
+  document.getElementById('new-task-panel').classList.add('hidden');
+  document.getElementById('detail').classList.remove('hidden');
   const job = await fetch('/jobs/' + id).then(r => r.json());
   jobs[id] = job;
   renderDetailFresh = true; // fresh view, always scroll to bottom
@@ -644,15 +691,34 @@ function getSortedJobs() {
 /**
  * Append a single log entry to the visible #log-feed without rebuilding the
  * entire detail panel. Only runs when jobId === selectedId and the feed exists.
+ * When index is provided, updates an existing element if present (for patches like Bash output).
  */
-function appendLogEntryDOM(entry, jobId) {
+function appendLogEntryDOM(entry, jobId, index) {
   if (jobId !== selectedId) return;
   const feed = document.getElementById('log-feed');
   if (!feed) return;
-  const html = renderLogEntry(entry, jobs[jobId]?.worktreePath ?? jobs[jobId]?.cwd);
+  let html = renderLogEntry(entry, jobs[jobId]?.worktreePath ?? jobs[jobId]?.cwd);
   if (!html) return;
+  // Inject data-log-index into the root element so we can find it for updates
+  if (index !== undefined) {
+    html = html.replace(/^(<\w+)/, `$1 data-log-index="${index}"`);
+  }
+  // If element with this index already exists, update it in-place
+  if (index !== undefined) {
+    const existing = feed.querySelector(`[data-log-index="${index}"]`);
+    if (existing) {
+      const wasOpen = existing.tagName === 'DETAILS' ? existing.open : existing.querySelector('details')?.open;
+      existing.outerHTML = html;
+      if (wasOpen) {
+        const updated = feed.querySelector(`[data-log-index="${index}"]`);
+        const details = updated?.tagName === 'DETAILS' ? updated : updated?.querySelector('details');
+        if (details) details.open = true;
+      }
+      return;
+    }
+  }
   // Remove the "No log entries yet" placeholder on first real entry
-  if (!feed.querySelector('.log-text, .log-user, .log-tool, .log-image')) {
+  if (!feed.querySelector('.log-text, .log-user, .log-tool, .log-image, .log-tool-bash')) {
     feed.innerHTML = '';
   }
   const wasAtBottom = (feed.scrollHeight - feed.clientHeight - feed.scrollTop) <= 80;
@@ -669,7 +735,19 @@ function initSSE() {
     list.forEach(j => { jobs[j.id] = j; });
     renderList(list); // already server-sorted
     updateCwdSelect(list);
-    if (selectedId && jobs[selectedId]) renderDetail(jobs[selectedId]);
+    const hashId = location.hash.slice(1);
+    if (hashId && jobs[hashId] && !selectedId) {
+      // First load: restore from hash using snapshot data (no extra fetch)
+      selectedId = hashId;
+      document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(hashId)));
+      document.getElementById('new-task-panel').classList.add('hidden');
+      document.getElementById('detail').classList.remove('hidden');
+      renderDetailFresh = true;
+      renderDetail(jobs[hashId]);
+      if (isMobile()) showMobilePanel('detail');
+    } else if (selectedId && jobs[selectedId]) {
+      renderDetail(jobs[selectedId]);
+    }
   });
 
   // A brand-new job was created
@@ -688,11 +766,11 @@ function initSSE() {
   // Job metadata changed: status, result, error, plan, pendingTools, timestamps, archived
   es.addEventListener('job_status', e => {
     const data = JSON.parse(e.data);
-    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage } = data;
+    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage, title } = data;
     const job = jobs[jobId];
     if (!job) return;
     const prevStatus = job.status;
-    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage });
+    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage, title });
     renderList(getSortedJobs());
     if (jobId === selectedId) {
       if (prevStatus !== status) renderDetailFresh = true;
@@ -708,7 +786,7 @@ function initSSE() {
     // Keep the local log array in sync (sparse-safe)
     while (job.log.length <= index) job.log.push(null);
     job.log[index] = entry;
-    appendLogEntryDOM(entry, jobId);
+    appendLogEntryDOM(entry, jobId, index);
     // Re-sort sidebar when a new user message arrives (followup changes sort key)
     if (entry.type === 'user') renderList(getSortedJobs());
   });
@@ -739,8 +817,10 @@ async function approveToolUse(id, toolUseID) {
   // SSE job_status event will update the detail panel
 }
 
-async function rejectToolUse(id, toolUseID) {
-  await fetch('/jobs/' + id + '/reject-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolUseID }) });
+async function rejectToolUse(id, toolUseID, btn) {
+  const reason = btn?.previousElementSibling?.value?.trim() || '';
+  const body = reason ? { toolUseID, reason } : { toolUseID };
+  await fetch('/jobs/' + id + '/reject-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   // SSE job_status event will update the detail panel
 }
 
@@ -845,7 +925,12 @@ async function submitJob() {
     selectedId = id;
     // Fetch and show the new job immediately; SSE will deliver all subsequent updates
     const job = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
-    if (job) { jobs[id] = job; renderDetailFresh = true; renderDetail(job); if (isMobile()) showMobilePanel('detail'); }
+    if (job) {
+      jobs[id] = job;
+      document.getElementById('new-task-panel').classList.add('hidden');
+      document.getElementById('detail').classList.remove('hidden');
+      renderDetailFresh = true; renderDetail(job); if (isMobile()) showMobilePanel('detail');
+    }
   } finally {
     btn.disabled = false; btn.textContent = 'Run Agent';
   }
@@ -856,6 +941,11 @@ document.getElementById('prompt').addEventListener('keydown', e => {
 });
 
 document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
+    e.preventDefault();
+    showNewTask();
+    return;
+  }
   if (e.key === 'Tab' && e.shiftKey) {
     e.preventDefault();
     const modes = ['auto', 'plan', 'edit', 'sandbox'];
@@ -873,5 +963,12 @@ window.addEventListener('resize', () => {
   main.classList.toggle('mobile-detail-active', !!active);
   document.body.classList.toggle('mobile-detail-active', !!active);
 });
+
+// Eagerly show the detail panel if a job hash is in the URL, to avoid the
+// flash of the new-task form before the SSE snapshot arrives.
+if (location.hash.slice(1)) {
+  document.getElementById('new-task-panel').classList.add('hidden');
+  document.getElementById('detail').classList.remove('hidden');
+}
 
 initSSE();

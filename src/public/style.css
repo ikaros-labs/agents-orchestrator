@@ -1,27 +1,40 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
-header { padding: 12px 20px; border-bottom: 1px solid #2a2a2a; background: #141414; }
-header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02em; }
-.create-form { padding: 16px 20px; border-bottom: 1px solid #2a2a2a; background: #141414; display: flex; gap: 10px; align-items: flex-start; }
-.prompt-area { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.create-form textarea { width: 100%; background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 13px; resize: none; font-family: inherit; min-height: 60px; }
-.create-form textarea:focus { outline: none; border-color: #555; }
-.form-right { display: flex; flex-direction: column; gap: 8px; min-width: 200px; }
-.create-form input[type=text] { background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 12px; font-family: monospace; }
-.create-form input[type=text]:focus { outline: none; border-color: #555; }
-.create-form select { background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 28px 8px 10px; font-size: 12px; font-family: monospace; cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
-.create-form select:focus { outline: none; border-color: #555; }
-.create-form select option[value="__new__"] { color: #6b9eff; }
+.prompt-area { display: flex; flex-direction: column; gap: 6px; }
+.new-task-form input[type=text] { background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 12px; font-family: monospace; }
+.new-task-form input[type=text]:focus { outline: none; border-color: #555; }
+.new-task-form select { background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 28px 8px 10px; font-size: 12px; font-family: monospace; cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+.new-task-form select:focus { outline: none; border-color: #555; }
+.new-task-form select option[value="__new__"] { color: #6b9eff; }
 .worktree-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; cursor: pointer; user-select: none; }
 .worktree-label input[type=checkbox] { accent-color: #6b9eff; cursor: pointer; }
 .form-submit-row { display: flex; gap: 8px; align-items: stretch; }
 #submit-btn { flex: 1; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 9px 16px; font-size: 13px; cursor: pointer; font-weight: 500; }
 #submit-btn:hover { background: #1d4ed8; }
 #submit-btn:disabled { background: #333; color: #666; cursor: default; }
+
+/* ── New task panel (main area form) ──────────────────────────────────────── */
+.new-task-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; overflow-y: auto; gap: 28px; }
+.new-task-panel.hidden { display: none; }
+.detail.hidden { display: none; }
+.new-task-heading { font-size: 26px; font-weight: 600; color: #fff; letter-spacing: -0.01em; }
+.new-task-form { width: 100%; max-width: 680px; display: flex; flex-direction: column; gap: 10px; }
+.new-task-form textarea { width: 100%; background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 8px; padding: 12px 14px; font-size: 14px; resize: none; font-family: inherit; min-height: 100px; }
+.new-task-form textarea:focus { outline: none; border-color: #555; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .main { display: flex; flex: 1; overflow: hidden; }
-.sidebar { width: 320px; border-right: 1px solid #2a2a2a; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
-.sidebar-header { padding: 6px 12px; border-bottom: 1px solid #1e1e1e; display: flex; justify-content: flex-end; flex-shrink: 0; min-height: 33px; align-items: center; }
-.btn-show-archived { background: transparent; color: #555; border: 1px solid #2a2a2a; border-radius: 5px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.sidebar { width: 300px; border-right: 1px solid #2a2a2a; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
+.sidebar-header { padding: 8px 10px; border-bottom: 1px solid #1e1e1e; display: flex; gap: 6px; align-items: center; flex-shrink: 0; min-height: 48px; }
+
+/* New task button */
+#new-task-btn { display: flex; align-items: center; gap: 7px; background: #1a2a4a; color: #6b9eff; border: 1px solid #2a3a6a; border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; flex: 1; }
+#new-task-btn:hover { background: #1e3055; border-color: #3a4a7a; }
+#new-task-btn svg { flex-shrink: 0; }
+.kbd-hint { display: inline-flex; align-items: center; gap: 1px; color: #445; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 3px; padding: 2px 5px; margin-left: auto; font-family: system-ui, sans-serif; font-size: 11px; flex-shrink: 0; line-height: 1; }
+.kbd-key { display: inline-block; line-height: 1; height: 1em; overflow: hidden; }
+
+.btn-show-archived { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: #555; border: 1px solid #2a2a2a; border-radius: 5px; padding: 5px 9px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
 .btn-show-archived:hover { color: #aaa; border-color: #444; }
 .btn-show-archived.active { color: #6b9eff; border-color: #2a3a6a; }
 .job-list { flex: 1; overflow-y: auto; min-height: 0; }
@@ -37,7 +50,7 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .badge-planning { background: #1a1535; color: #a78bfa; }
 .badge-awaiting_approval { background: #2a1f00; color: #fb923c; }
 .badge-awaiting_tool_approval { background: #2a1a00; color: #f59e0b; }
-.badge-awaiting_user_question { background: #0d1f2e; color: #38bdf8; }
+.badge-awaiting_user_question { background: #2a1a00; color: #f59e0b; }
 .badge-running { background: #0d2035; color: #38bdf8; }
 .badge-completed { background: #0d2218; color: #22c55e; }
 .badge-failed { background: #2a0d0d; color: #ef4444; }
@@ -51,6 +64,20 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .log-text { font-size: 13px; color: #c8c8c8; line-height: 1.6; word-break: break-word; }
 .log-tool { display: inline-flex; align-items: center; gap: 6px; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 4px; padding: 3px 10px; font-size: 11px; font-family: monospace; color: #818cf8; align-self: flex-start; }
 .log-tool::before { content: "⚙"; font-size: 10px; }
+/* Bash collapsible toggle */
+details.log-tool-bash { align-self: flex-start; }
+details.log-tool-bash > summary { display: inline-flex; align-items: center; gap: 6px; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 4px; padding: 3px 10px; font-size: 11px; font-family: monospace; color: #818cf8; cursor: pointer; list-style: none; user-select: none; }
+details.log-tool-bash > summary::-webkit-details-marker { display: none; }
+details.log-tool-bash > summary::before { content: "⚙"; font-size: 10px; }
+details.log-tool-bash > summary .tool-detail { opacity: 0.6; font-weight: 400; }
+details.log-tool-bash > summary::after { content: "▶"; font-size: 8px; opacity: 0.4; margin-left: 2px; }
+details.log-tool-bash[open] > summary::after { content: "▼"; }
+details.log-tool-bash[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom-color: transparent; }
+.tool-expand-body { background: #111122; border: 1px solid #2a2a4a; border-top: none; border-radius: 0 4px 4px 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; max-width: 700px; }
+.tool-expand-row { display: flex; gap: 10px; align-items: flex-start; font-size: 11px; font-family: monospace; }
+.tool-expand-key { color: #7c3aed; font-weight: 600; flex-shrink: 0; min-width: 28px; padding-top: 1px; }
+.tool-expand-code { color: #d1d5db; white-space: pre-wrap; word-break: break-all; margin: 0; line-height: 1.5; max-height: 300px; overflow-y: auto; }
+.tool-expand-empty .tool-expand-code { color: #4b5563; font-style: italic; }
 .log-todo { display: flex; flex-direction: column; gap: 3px; align-self: stretch; background: #0f1117; border: 1px solid #2a2a4a; border-radius: 6px; padding: 8px 12px; font-size: 12px; }
 .todo-item { display: flex; align-items: baseline; gap: 8px; }
 .todo-icon { font-size: 11px; flex-shrink: 0; }
@@ -73,16 +100,18 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
 .tool-input-row { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; font-family: monospace; line-height: 1.5; }
 .tool-input-key { color: #7c3aed; font-weight: 600; flex-shrink: 0; min-width: 80px; }
 .tool-input-val { color: #d1d5db; white-space: pre-wrap; word-break: break-all; }
-.tool-approval-actions { display: flex; gap: 10px; }
+.tool-approval-actions { display: flex; gap: 10px; align-items: center; }
+.tool-deny-reason { flex: 1; background: #0b0b14; color: #d1d5db; border: 1px solid #2a2a3a; border-radius: 6px; padding: 7px 10px; font-size: 12px; outline: none; }
+.tool-deny-reason:focus { border-color: #7f1d1d; }
 
 /* ── Question bar (AskUserQuestion) ─────────────────────────────────────── */
 .question-bar { display: flex; flex-direction: column; gap: 14px; padding: 14px 20px 0; border-top: 1px solid #2a2a2a; background: #070d14; min-height: 150px; overflow-y: auto; }
 .question-bar-header { display: flex; align-items: center; gap: 10px; }
-.question-bar-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #0284c7; }
+.question-bar-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #b45309; }
 .question-bar-title { font-size: 12px; color: #64748b; }
 .question-item { display: flex; flex-direction: column; gap: 8px; }
 .question-text { font-size: 13px; color: #e0e0e0; font-weight: 500; line-height: 1.5; }
-.question-header-chip { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #38bdf8; background: #0c2233; border: 1px solid #164e63; border-radius: 4px; padding: 1px 7px; margin-bottom: 4px; }
+.question-header-chip { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #f59e0b; background: #1a1000; border: 1px solid #78350f; border-radius: 4px; padding: 1px 7px; margin-bottom: 4px; }
 .question-options { display: flex; flex-direction: column; gap: 6px; }
 .question-option { display: flex; align-items: flex-start; gap: 10px; background: #0e1623; border: 1px solid #1e293b; border-radius: 6px; padding: 9px 12px; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
 .question-option:hover { background: #111d2e; border-color: #2563eb; }
@@ -231,16 +260,26 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
     z-index: 1;
     border-right: none;
   }
-  .detail {
+  /* On mobile both panels are absolutely positioned off-screen;
+     override desktop display:none from .hidden so transitions work */
+  .detail, .new-task-panel {
+    display: flex !important;
     position: absolute;
     inset: 0;
     width: 100%;
     transform: translateX(100%);
     transition: transform 0.2s ease;
     z-index: 2;
+    overflow-y: auto;
+  }
+  .new-task-panel {
+    justify-content: flex-start;
+    padding-top: 40px;
   }
   .main.mobile-detail-active .sidebar { transform: translateX(-100%); }
-  .main.mobile-detail-active .detail  { transform: translateX(0); }
+  /* Slide in whichever panel is not hidden */
+  .main.mobile-detail-active .detail:not(.hidden)       { transform: translateX(0); }
+  .main.mobile-detail-active .new-task-panel:not(.hidden) { transform: translateX(0); }
 
   /* Back button */
   .mobile-back-btn {
@@ -256,18 +295,6 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
     cursor: pointer;
     margin-right: 12px;
     flex-shrink: 0;
-  }
-
-  /* Responsive create-form: stack vertically */
-  .create-form {
-    flex-direction: column;
-  }
-  .form-right {
-    min-width: 0;
-    width: 100%;
-  }
-  .create-form textarea {
-    min-height: 72px;
   }
 
   /* Touch-friendly targets */
@@ -305,13 +332,13 @@ header h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.02
     max-height: 60vh;
   }
 
-  /* Hide create-form when viewing a job detail on mobile */
-  body.mobile-detail-active .create-form {
-    display: none;
-  }
-
   /* Collapse verbose job header metadata — keep only badge + action buttons */
   .detail-meta span {
     display: none;
   }
+
+  /* Hide keyboard hint on mobile (no keyboard) */
+  .kbd-hint { display: none; }
+
+  .new-task-heading { font-size: 22px; }
 }
