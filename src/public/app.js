@@ -527,9 +527,7 @@ async function answerQuestion(id) {
 
 // ── renderDetail sub-functions ──────────────────────────────────────────────
 
-function renderPlanCard(job) {
-  const exitEntry = job.chat?.findLast(e => e.type === 'tool_call' && e.name === 'ExitPlanMode');
-  const planText = exitEntry?.input?.plan;
+function renderPlanCard(planText) {
   if (!planText) return '';
   return `<div class="chat-plan"><span class="chat-plan-label">Plan</span><div class="markdown-body">${md(planText)}</div></div>`;
 }
@@ -719,10 +717,10 @@ function renderDetail(job) {
   const inputState = captureInputState(job.id);
 
   const cwd = job.worktreePath ?? job.cwd;
-  const exitPlanIdx = job.chat.findLastIndex(e => e.type === 'tool_call' && e.name === 'ExitPlanMode');
-  const chatHtml = job.chat.map((e, i) => {
+  const chatHtml = job.chat.map(e => {
     const html = renderChatEntry(e, cwd);
-    return i === exitPlanIdx ? html + renderPlanCard(job) : html;
+    if (e.type === 'tool_call' && e.name === 'ExitPlanMode') return html + renderPlanCard(e.input?.plan);
+    return html;
   }).join('');
 
   const feedHtml = `<div class="chat-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`
