@@ -200,6 +200,14 @@ export function setTitle(id: string, title: string): void {
   emitSessionStatus(session);
 }
 
+export function setMode(id: string, mode: SessionMode): void {
+  const session = getSessionOrWarn(id, "setMode");
+  if (!session) return;
+  session.mode = mode;
+  persistSession(session);
+  emitSessionStatus(session);
+}
+
 export function setModel(id: string, model: string): void {
   const session = getSessionOrWarn(id, "setModel");
   if (!session) return;

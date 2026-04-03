@@ -193,6 +193,7 @@ Bun.serve({
       if (!(parsed instanceof Response) && parsed.data.model) {
         store.setModel(id, parsed.data.model);
       }
+      store.setMode(id, "edit");
       Promise.resolve().then(() => sessions.executeSession(id, session.claudeSessionId!, session.tools, session.worktreePath ?? session.cwd));
       return Response.json({ id, status: "running" }, { status: 202 });
     },
@@ -281,7 +282,7 @@ Bun.serve({
       if (answerText) store.appendChat(id, { type: "user", text: answerText, ts });
       store.removePendingTool(id, askToolEntry.toolUseID);
       // Return to "planning" if we haven't produced a plan yet, otherwise "running"
-      store.setStatus(id, session.plan === null ? "planning" : "running");
+      store.setStatus(id, session.mode === "plan" ? "planning" : "running");
       sessions.resolveToolApproval(id, askToolEntry.toolUseID, { behavior: "allow", updatedInput: { questions, answers } });
       return Response.json({ id, status: "running" }, { status: 202 });
     },
