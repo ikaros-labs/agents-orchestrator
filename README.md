@@ -223,3 +223,13 @@ Saved images are served at `GET /images/:sessionId/:filename`.
 | `PORT` | `3000` | HTTP port |
 | `HOST` | `localhost` | Hostname to bind |
 | `ANTHROPIC_API_KEY` | — | Required for the agent to run |
+
+---
+
+## Contributing
+
+1. Fork the repository and create a branch from `main`.
+2. Install dependencies: `bun install`
+3. Start a dev server: `bun run dev` (or `./dev-server.sh` for an isolated throwaway instance on a random port)
+4. Make your changes and verify them against the running server.
+5. Open a pull request against `main`.
