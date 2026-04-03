@@ -87,6 +87,57 @@ function removePendingFile(index) {
   renderFilePreviews();
 }
 
+// ── Notification sounds ─────────────────────────────────────────────────────
+function playSound(type) {
+  if (localStorage.getItem('soundsMuted') === 'true') return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function beep(freq, startTime, duration, vol = 0.12) {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0, startTime);
+      g.gain.linearRampToValueAtTime(vol, startTime + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+      osc.start(startTime);
+      osc.stop(startTime + duration + 0.02);
+    }
+    const t = ctx.currentTime;
+    if (type === 'attention') {
+      beep(660, t, 0.12);
+      beep(880, t + 0.14, 0.12);
+    } else if (type === 'success') {
+      beep(523, t, 0.09);
+      beep(659, t + 0.10, 0.09);
+      beep(784, t + 0.20, 0.14);
+    } else if (type === 'failure') {
+      beep(330, t, 0.12, 0.11);
+      beep(220, t + 0.14, 0.18, 0.09);
+    }
+    setTimeout(() => ctx.close(), 700);
+  } catch (e) { /* ignore audio errors */ }
+}
+
+function toggleMute() {
+  const muted = localStorage.getItem('soundsMuted') === 'true';
+  localStorage.setItem('soundsMuted', String(!muted));
+  updateMuteBtn();
+}
+
+function updateMuteBtn() {
+  const btn = document.getElementById('mute-btn');
+  if (!btn) return;
+  const muted = localStorage.getItem('soundsMuted') === 'true';
+  btn.title = muted ? 'Sounds muted — click to enable' : 'Sounds on — click to mute';
+  btn.classList.toggle('muted', muted);
+  btn.innerHTML = muted
+    ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`
+    : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 function relTime(iso) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -204,7 +255,9 @@ function renderList(list) {
         New task
         <span class="kbd-hint"><span class="kbd-key">⌘</span><span class="kbd-key">⇧</span><span class="kbd-key">O</span></span>
       </button>
-      ${archivedBtn}`;
+      ${archivedBtn}
+      <button id="mute-btn" class="btn-mute" onclick="toggleMute()"></button>`;
+    updateMuteBtn();
   }
 
   const visible = showArchived ? list : list.filter(j => !j.archived);
@@ -836,6 +889,15 @@ function initSSE() {
     if (!session) return;
     const prevStatus = session.status;
     Object.assign(session, { status, startedAt, finishedAt, result, error, plan, claudeSessionId, pendingTools, archived, usage, title });
+    if (prevStatus !== status) {
+      if (['awaiting_approval', 'awaiting_tool_approval', 'awaiting_user_question'].includes(status)) {
+        playSound('attention');
+      } else if (status === 'completed') {
+        playSound('success');
+      } else if (status === 'failed' || status === 'stopped') {
+        playSound('failure');
+      }
+    }
     renderList(getSortedJobs());
     if (jobId === selectedId) {
       if (prevStatus !== status) renderDetailFresh = true;

@@ -37,6 +37,9 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 .btn-show-archived { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: #555; border: 1px solid #2a2a2a; border-radius: 5px; padding: 5px 9px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
 .btn-show-archived:hover { color: #aaa; border-color: #444; }
 .btn-show-archived.active { color: #6b9eff; border-color: #2a3a6a; }
+.btn-mute { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: #555; border: 1px solid #2a2a2a; border-radius: 5px; padding: 5px; cursor: pointer; flex-shrink: 0; width: 28px; height: 28px; }
+.btn-mute:hover { color: #aaa; border-color: #444; }
+.btn-mute.muted { color: #333; border-color: #222; }
 .session-list { flex: 1; overflow-y: auto; min-height: 0; }
 .session-list-empty { padding: 24px 16px; color: #555; font-size: 13px; text-align: center; }
 .session-item { padding: 12px 16px; border-bottom: 1px solid #1e1e1e; cursor: pointer; }
