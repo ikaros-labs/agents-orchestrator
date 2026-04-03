@@ -26,6 +26,7 @@ let currentModel = 'claude-sonnet-4-6';
 let currentEffort = 'high';
 let currentSandbox = 'sandbox';
 let showArchived = false;
+const approvalModels = {}; // jobId → model selected for execution at approval time
 
 // ── File attachment state ───────────────────────────────────────────────────
 let pendingFiles = []; // { mediaType, data, objectUrl, name }
@@ -119,6 +120,13 @@ function setMode(mode) {
 function setModel(model) {
   currentModel = model;
   document.querySelectorAll('#model-selector .mode-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.model === model);
+  });
+}
+
+function setApprovalModel(id, model) {
+  approvalModels[id] = model;
+  document.querySelectorAll(`.approval-model-btn[data-job="${id}"]`).forEach(btn => {
     btn.classList.toggle('active', btn.dataset.model === model);
   });
 }
@@ -481,8 +489,19 @@ function renderDetail(job) {
     : job.error
     ? `<div class="result-box result-error">${escHtml(job.error)}</div>`
     : '';
+  if (job.status === 'awaiting_approval' && !approvalModels[job.id]) {
+    approvalModels[job.id] = job.model ?? 'claude-sonnet-4-6';
+  }
   const approveBarHtml = job.status === 'awaiting_approval'
     ? `<div class="approve-bar">
+        <div class="approve-model-row">
+          <span class="approve-model-label">Run with</span>
+          <div class="mode-selector">
+            <button class="mode-btn approval-model-btn ${(approvalModels[job.id] ?? job.model) === 'claude-haiku-4-5-20251001' ? 'active' : ''}" data-job="${job.id}" data-model="claude-haiku-4-5-20251001" onclick="setApprovalModel('${job.id}', 'claude-haiku-4-5-20251001')">Haiku</button>
+            <button class="mode-btn approval-model-btn ${(!approvalModels[job.id] && !job.model) || (approvalModels[job.id] ?? job.model) === 'claude-sonnet-4-6' ? 'active' : ''}" data-job="${job.id}" data-model="claude-sonnet-4-6" onclick="setApprovalModel('${job.id}', 'claude-sonnet-4-6')">Sonnet</button>
+            <button class="mode-btn approval-model-btn ${(approvalModels[job.id] ?? job.model) === 'claude-opus-4-6' ? 'active' : ''}" data-job="${job.id}" data-model="claude-opus-4-6" onclick="setApprovalModel('${job.id}', 'claude-opus-4-6')">Opus</button>
+          </div>
+        </div>
         <div class="approve-actions">
           <button class="btn-approve" onclick="approveJob('${job.id}')">Approve &amp; Run</button>
           <button class="btn-reject" onclick="rejectJob('${job.id}')">Reject</button>
@@ -835,7 +854,11 @@ async function rejectToolUse(id, toolUseID, btn) {
 }
 
 async function approveJob(id) {
-  await fetch('/jobs/' + id + '/approve', { method: 'POST' });
+  const model = approvalModels[id];
+  const opts = model
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) }
+    : { method: 'POST' };
+  await fetch('/jobs/' + id + '/approve', opts);
   // SSE job_status event will deliver the transition and scroll to bottom
 }
 
