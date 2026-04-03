@@ -475,8 +475,7 @@ function renderPlanCard(job) {
 }
 
 function renderResultBox(job) {
-  if (job.result) return `<div class="chat-text markdown-body">${md(job.result)}</div>`;
-  if (job.error) return `<div class="chat-text" style="color:#f87171">${escHtml(job.error)}</div>`;
+  if (job.error) return `<div class="chat-error"><span class="chat-error-label">Error</span>${escHtml(job.error)}</div>`;
   return '';
 }
 
