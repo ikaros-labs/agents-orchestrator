@@ -86,9 +86,6 @@ details.chat-tool-bash[open] > summary { border-bottom-left-radius: 0; border-bo
 .todo-in_progress .todo-icon { color: #f59e0b; }
 .todo-completed .todo-icon { color: #22c55e; }
 .todo-completed .todo-content { color: #6b7280; text-decoration: line-through; }
-.result-box { margin: 0 20px 16px; padding: 10px 14px; border-radius: 6px; font-size: 13px; }
-.result-success { background: #0d2218; border: 1px solid #166534; color: #4ade80; }
-.result-error { background: #2a0d0d; border: 1px solid #7f1d1d; color: #f87171; }
 .spinner { display: inline-block; width: 8px; height: 8px; border: 2px solid #38bdf8; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
 /* ── Tool approval bar ──────────────────────────────────────────────────────── */
@@ -105,10 +102,7 @@ details.chat-tool-bash[open] > summary { border-bottom-left-radius: 0; border-bo
 .tool-deny-reason:focus { border-color: #7f1d1d; }
 
 /* ── Question bar (AskUserQuestion) ─────────────────────────────────────── */
-.question-bar { display: flex; flex-direction: column; gap: 14px; padding: 14px 20px 0; border-top: 1px solid #2a2a2a; background: #070d14; min-height: 150px; overflow-y: auto; }
-.question-bar-header { display: flex; align-items: center; gap: 10px; }
-.question-bar-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #b45309; }
-.question-bar-title { font-size: 12px; color: #64748b; }
+.question-bar { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 0; }
 .question-item { display: flex; flex-direction: column; gap: 8px; }
 .question-text { font-size: 13px; color: #e0e0e0; font-weight: 500; line-height: 1.5; }
 .question-header-chip { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #f59e0b; background: #1a1000; border: 1px solid #78350f; border-radius: 4px; padding: 1px 7px; margin-bottom: 4px; }
@@ -147,10 +141,6 @@ details.chat-tool-bash[open] > summary { border-bottom-left-radius: 0; border-bo
 .session-item.archived { opacity: 0.5; }
 .approve-revise { display: flex; flex-direction: column; gap: 6px; }
 
-/* ── Plan card (shown in log feed when awaiting_approval) ───────────────── */
-.plan-card { background: #0d1f0d; border: 1px solid #166534; border-top: 1px solid #166534; overflow: hidden; flex-shrink: 0; }
-.plan-card-header { background: #166534; color: #4ade80; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 14px; }
-.plan-card-body { padding: 14px 16px; max-height: 40vh; overflow-y: auto; }
 .followup-bar { display: flex; flex-direction: column; gap: 6px; padding: 12px 20px; border-top: 1px solid #2a2a2a; flex-shrink: 0; }
 .followup-input-row { display: flex; }
 .followup-bar textarea, .approve-revise textarea { flex: 1; width: 100%; background: #1e1e1e; border: 1px solid #333; color: #e0e0e0; border-radius: 6px; padding: 8px 10px; font-size: 13px; resize: none; font-family: inherit; min-height: 56px; }

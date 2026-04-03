@@ -373,10 +373,6 @@ function renderQuestionBar(job) {
   }).join('<hr class="question-divider">');
 
   return `<div class="question-bar">
-    <div class="question-bar-header">
-      <span class="question-bar-label">Clarifying questions</span>
-      <span class="question-bar-title">Claude needs your input to continue</span>
-    </div>
     ${questionsHtml}
     <div class="question-bar-actions">
       <button class="btn-answer" id="answer-btn-${id}" onclick="answerQuestion('${id}')">Submit Answers</button>
@@ -475,15 +471,12 @@ async function answerQuestion(id) {
 
 function renderPlanCard(job) {
   if (job.status !== 'awaiting_approval' || !job.plan) return '';
-  return `<div class="plan-card">
-    <div class="plan-card-header">Plan</div>
-    <div class="plan-card-body markdown-body">${md(job.plan)}</div>
-  </div>`;
+  return `<div class="chat-text markdown-body">${md(job.plan)}</div>`;
 }
 
 function renderResultBox(job) {
-  if (job.result) return `<div class="result-box result-success markdown-body">${md(job.result)}</div>`;
-  if (job.error) return `<div class="result-box result-error">${escHtml(job.error)}</div>`;
+  if (job.result) return `<div class="chat-text markdown-body">${md(job.result)}</div>`;
+  if (job.error) return `<div class="chat-text" style="color:#f87171">${escHtml(job.error)}</div>`;
   return '';
 }
 
@@ -667,14 +660,14 @@ function renderDetail(job) {
   const inputState = captureInputState(job.id);
 
   const feedHtml = `<div class="chat-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`
-    + job.chat.map(e => renderChatEntry(e, job.worktreePath ?? job.cwd)).join('');
+    + job.chat.map(e => renderChatEntry(e, job.worktreePath ?? job.cwd)).join('')
+    + renderPlanCard(job)
+    + renderResultBox(job)
+    + renderQuestionBar(job);
 
   document.getElementById('detail').innerHTML = `
     ${renderDetailHeader(job)}
     <div class="chat-feed" id="chat-feed">${feedHtml}</div>
-    ${renderPlanCard(job)}
-    ${renderResultBox(job)}
-    ${renderQuestionBar(job)}
     ${renderApproveBar(job)}
     ${renderToolApprovalBar(job)}
     ${renderFollowUpBar(job)}
