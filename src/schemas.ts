@@ -36,3 +36,7 @@ export const FollowUpSchema = z.object({
   prompt: z.string().trim().min(1, "prompt must be a non-empty string"),
   images: z.array(RawImageSchema).default([]),
 });
+
+export const RenameSchema = z.object({
+  title: z.string().trim().min(1, "title must be a non-empty string"),
+});

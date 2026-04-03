@@ -560,9 +560,14 @@ function renderDetail(job) {
   const archiveBtnHtml = job.archived
     ? `<button class="btn-archive active" onclick="unarchiveJob('${job.id}')">Unarchive</button>`
     : `<button class="btn-archive" onclick="archiveJob('${job.id}')">Archive</button>`;
+  const titleText = escHtml(job.title || job.prompt.split('\n')[0].slice(0, 120));
   document.getElementById('detail').innerHTML = `
     <div class="detail-header">
       <button class="mobile-back-btn" onclick="goBack()">&#8592; Back</button>
+      <div class="detail-title" onclick="startRenameJob('${job.id}')" title="Click to rename">
+        ${titleText}
+        <svg class="title-edit-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </div>
       <div class="detail-meta">
         ${badge(job.status)}
         <span>Started: ${started}</span>
@@ -662,6 +667,45 @@ function renderFollowupPreviews(jobId) { renderJobImagePreviews(followupImages, 
 function renderRevisePreviews(jobId) { renderJobImagePreviews(reviseImages, 'revise', jobId); }
 function removeFollowupImage(jobId, index) { removeJobImage(followupImages, 'followup', jobId, index); }
 function removeReviseImage(jobId, index) { removeJobImage(reviseImages, 'revise', jobId, index); }
+
+// ── Rename ─────────────────────────────────────────────────────────────────
+function startRenameJob(id) {
+  const titleEl = document.querySelector('.detail-title');
+  if (!titleEl) return;
+  const currentTitle = jobs[id]?.title || (jobs[id]?.prompt?.split('\n')[0]?.slice(0, 120) ?? '');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'detail-title-input';
+  input.value = currentTitle;
+  let committed = false;
+  function commit() {
+    if (committed) return;
+    committed = true;
+    const newTitle = input.value.trim();
+    if (newTitle && newTitle !== currentTitle) {
+      renameJob(id, newTitle);
+    } else {
+      renderDetail(jobs[id]);
+    }
+  }
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); committed = false; input.blur(); }
+    if (e.key === 'Escape') { committed = true; renderDetail(jobs[id]); }
+  });
+  input.addEventListener('blur', commit);
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+async function renameJob(id, title) {
+  await fetch('/jobs/' + id + '/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  // SSE job_status will update the title and re-render
+}
 
 // ── API actions ────────────────────────────────────────────────────────────
 async function selectJob(id) {

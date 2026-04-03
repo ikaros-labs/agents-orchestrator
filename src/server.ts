@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as store from "./store.ts";
 import * as jobs from "./jobs.ts";
 import { generateTitle } from "./title.ts";
-import { CreateJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
+import { CreateJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema, RenameSchema } from "./schemas.ts";
 import type { JobMode } from "./types.ts";
 
 const sseEncoder = new TextEncoder();
@@ -305,6 +305,18 @@ Bun.serve({
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       store.setArchived(id, false);
+      return Response.json({ ok: true });
+    },
+
+    // ── Rename ─────────────────────────────────────────────────────────────
+
+    "/jobs/:id/rename": async (req) => {
+      const { id } = req.params;
+      const job = store.getJob(id);
+      if (!job) return jsonError(404, "Job not found");
+      const parsed = await parseBody(req, RenameSchema);
+      if (parsed instanceof Response) return parsed;
+      store.setTitle(id, parsed.data.title);
       return Response.json({ ok: true });
     },
 
