@@ -471,7 +471,7 @@ async function answerQuestion(id) {
 
 function renderPlanCard(job) {
   if (job.status !== 'awaiting_approval' || !job.plan) return '';
-  return `<div class="chat-text markdown-body">${md(job.plan)}</div>`;
+  return `<div class="chat-plan"><span class="chat-plan-label">Plan</span><div class="markdown-body">${md(job.plan)}</div></div>`;
 }
 
 function renderResultBox(job) {

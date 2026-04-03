@@ -62,6 +62,8 @@ body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; 
 .detail-meta span { font-size: 11px; color: #555; }
 .chat-feed { flex: 1; overflow-y: auto; padding: 14px 20px; display: flex; flex-direction: column; gap: 6px; }
 .chat-text { font-size: 13px; color: #c8c8c8; line-height: 1.6; word-break: break-word; }
+.chat-plan { background: #0b1a0b; border-left: 3px solid #166534; border-radius: 0 6px 6px 0; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.chat-plan-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #4ade80; }
 .chat-tool { display: inline-flex; align-items: center; gap: 6px; background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 4px; padding: 3px 10px; font-size: 11px; font-family: monospace; color: #818cf8; align-self: flex-start; }
 .chat-tool::before { content: "⚙"; font-size: 10px; }
 /* Bash collapsible toggle */
