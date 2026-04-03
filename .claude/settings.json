@@ -8,5 +8,10 @@
       "Skill(playwright-cli)",
       "Bash(playwright-cli:*)"
     ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowWrite": ["/tmp/agents-orchestrator"]
+    }
   }
 }
