@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import * as store from "./store.ts";
 import * as jobs from "./jobs.ts";
+import { removeWorktree } from "./worktree.ts";
 import { generateTitle } from "./title.ts";
 import { CreateJobSchema, ApproveJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
 import type { JobMode, SandboxMode } from "./types.ts";
@@ -302,7 +303,7 @@ Bun.serve({
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       store.setArchived(id, true);
-      if (job.worktreePath) jobs.removeWorktree(job);
+      if (job.worktreePath) removeWorktree(job);
       return Response.json({ ok: true });
     },
 
