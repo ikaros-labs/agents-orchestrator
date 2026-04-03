@@ -527,9 +527,9 @@ async function answerQuestion(id) {
 
 // ── renderDetail sub-functions ──────────────────────────────────────────────
 
-function renderPlanCard(job) {
-  if (!job.plan) return '';
-  return `<div class="chat-plan"><span class="chat-plan-label">Plan</span><div class="markdown-body">${md(job.plan)}</div></div>`;
+function renderPlanCard(planText) {
+  if (!planText) return '';
+  return `<div class="chat-plan"><span class="chat-plan-label">Plan</span><div class="markdown-body">${md(planText)}</div></div>`;
 }
 
 function renderResultBox(job) {
@@ -717,17 +717,14 @@ function renderDetail(job) {
   const inputState = captureInputState(job.id);
 
   const cwd = job.worktreePath ?? job.cwd;
-  const exitPlanIdx = job.plan
-    ? job.chat.findIndex(e => e.type === 'tool_call' && e.name === 'ExitPlanMode')
-    : -1;
-  const chatHtml = job.chat.map((e, i) => {
+  const chatHtml = job.chat.map(e => {
     const html = renderChatEntry(e, cwd);
-    return i === exitPlanIdx ? html + renderPlanCard(job) : html;
+    if (e.type === 'tool_call' && e.name === 'ExitPlanMode') return html + renderPlanCard(e.input?.plan);
+    return html;
   }).join('');
 
   const feedHtml = `<div class="chat-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`
     + chatHtml
-    + (exitPlanIdx === -1 ? renderPlanCard(job) : '')
     + renderResultBox(job)
     + renderQuestionBar(job);
 
@@ -889,11 +886,11 @@ function initSSE() {
   // Session metadata changed: status, result, error, plan, pendingTools, timestamps, archived
   es.addEventListener('session_status', e => {
     const data = JSON.parse(e.data);
-    const { jobId, status, startedAt, finishedAt, result, error, plan, claudeSessionId, pendingTools, archived, usage, title } = data;
+    const { jobId, status, startedAt, finishedAt, result, error, claudeSessionId, pendingTools, archived, usage, title } = data;
     const session = sessions[jobId];
     if (!session) return;
     const prevStatus = session.status;
-    Object.assign(session, { status, startedAt, finishedAt, result, error, plan, claudeSessionId, pendingTools, archived, usage, title });
+    Object.assign(session, { status, startedAt, finishedAt, result, error, claudeSessionId, pendingTools, archived, usage, title });
     if (prevStatus !== status) {
       if (['awaiting_approval', 'awaiting_tool_approval', 'awaiting_user_question'].includes(status)) {
         playSound('attention');

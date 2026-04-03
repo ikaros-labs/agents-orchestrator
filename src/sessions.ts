@@ -286,16 +286,14 @@ async function saveImage(sessionId: string, index: number, mediaType: string, ba
 /**
  * Drives the `for await` loop over a query stream, handling NDJSON logging,
  * content block processing, and claudeSessionId capture in one place.
- * - `collectPlanText`: if true, text blocks are accumulated and returned (used by plan/revise sessions)
  * - `captureResult`: if true, store.setResult is called on result messages (used by execute sessions)
  */
 async function runQueryStream(
   id: string,
   stream: AsyncIterable<any>,
   imageCounter: number,
-  opts: { collectPlanText?: boolean; captureResult?: boolean } = {}
-): Promise<string[]> {
-  const planTexts: string[] = [];
+  opts: { captureResult?: boolean } = {}
+): Promise<void> {
   // Maps tool_use_id → chat entry index so we can patch with output later
   const toolCallIndices = new Map<string, number>();
   for await (const message of stream) {
@@ -305,7 +303,6 @@ async function runQueryStream(
       for (const block of message.message.content) {
         if ("text" in block) {
           store.appendChat(id, { type: "text", text: block.text, ts });
-          if (opts.collectPlanText) planTexts.push(block.text);
         } else if ("name" in block) {
           const toolUseId: string | undefined = (block as any).id;
           store.appendChat(id, { type: "tool_call", name: block.name, input: (block as any).input, toolUseId, ts });
@@ -348,7 +345,6 @@ async function runQueryStream(
       }
     }
   }
-  return planTexts;
 }
 
 /** Build a multimodal prompt iterable when files are provided; otherwise fall back to a plain string. */
@@ -440,10 +436,8 @@ export async function planSession(id: string, prompt: string, tools: string[], c
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
       },
     });
-    const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
+    await runQueryStream(id, stream, rawImages.length, {});
     if (controller.signal.aborted) return;
-    const exitEntry = store.getSession(id)?.chat.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
-    store.setPlan(id, (exitEntry as any)?.input?.plan || planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   });
 }
@@ -472,10 +466,8 @@ export async function revisePlanSession(id: string, feedback: string, claudeSess
         ...(cwd ? { cwd } : {}),
       },
     });
-    const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
+    await runQueryStream(id, stream, 0, {});
     if (controller.signal.aborted) return;
-    const exitEntry = store.getSession(id)?.chat.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
-    store.setPlan(id, (exitEntry as any)?.input?.plan || planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   });
 }
