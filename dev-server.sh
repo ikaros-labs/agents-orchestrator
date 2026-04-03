@@ -24,7 +24,8 @@ fi
 bun i
 
 PORT=$((RANDOM + 3100))
-LOG_FILE=$(mktemp /tmp/dev-server-XXXXXX.log)
+mkdir -p /tmp/agents-orchestrator
+LOG_FILE=$(mktemp /tmp/agents-orchestrator/dev-server-XXXXXX.log)
 
 HOST=100.81.181.2 PORT=$PORT timeout 4h bun --env-file=/root/agents-orchestrator/.env run dev > "$LOG_FILE" 2>&1 &
 PID=$!

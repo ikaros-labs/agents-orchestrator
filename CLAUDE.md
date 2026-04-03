@@ -23,7 +23,7 @@ Use `server.sh` to run the production-like server. It manages a singleton instan
 ./server.sh --dev                    # watch mode
 ```
 
-PID is stored in `/tmp/agents-orchestrator.pid`; logs go to `/tmp/agents-orchestrator.log`.
+PID is stored in `/tmp/agents-orchestrator/server.pid`; logs go to `/tmp/agents-orchestrator/server.log`.
 
 ### Testing your changes
 

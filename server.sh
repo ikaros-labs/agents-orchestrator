@@ -5,8 +5,9 @@
 
 set -e
 
-PID_FILE="/tmp/agents-orchestrator.pid"
-LOG_FILE="/tmp/agents-orchestrator.log"
+mkdir -p /tmp/agents-orchestrator
+PID_FILE="/tmp/agents-orchestrator/server.pid"
+LOG_FILE="/tmp/agents-orchestrator/server.log"
 
 ENV_FILE="/root/agents-orchestrator/.env"
 if [[ -f "$ENV_FILE" ]]; then
