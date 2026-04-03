@@ -580,7 +580,6 @@ function renderDetailHeader(job) {
       ${badge(job.status)}
       <span>Started: ${started}</span>
       <span>Finished: ${finished}</span>
-      <span>Tools: ${job.tools.join(', ')}</span>
       ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ''}
       ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ''}
       ${job.sandbox && job.sandbox !== 'none' ? `<span class="mode-tag mode-tag-${job.sandbox}" title="Sandbox: ${job.sandbox}">${job.sandbox}</span>` : ''}
@@ -970,14 +969,12 @@ async function sendFollowUp(id) {
 async function submitJob() {
   const prompt = document.getElementById('prompt').value.trim();
   if (!prompt) return;
-  const toolsRaw = document.getElementById('tools').value.trim();
-  const tools = toolsRaw ? toolsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['Read','Edit','Glob'];
   const cwdSel = document.getElementById('cwd-select');
   const cwdVal = cwdSel.value === '__new__'
     ? document.getElementById('cwd-custom').value.trim()
     : cwdSel.value;
   const useWorktree = document.getElementById('use-worktree').checked;
-  const body = cwdVal ? {prompt, tools, cwd: cwdVal, useWorktree, mode: currentMode, model: currentModel, effort: currentEffort, sandbox: currentSandbox} : {prompt, tools, useWorktree, mode: currentMode, model: currentModel, effort: currentEffort, sandbox: currentSandbox};
+  const body = cwdVal ? {prompt, cwd: cwdVal, useWorktree, mode: currentMode, model: currentModel, effort: currentEffort, sandbox: currentSandbox} : {prompt, useWorktree, mode: currentMode, model: currentModel, effort: currentEffort, sandbox: currentSandbox};
   if (pendingFiles.length) {
     body.images = pendingFiles.map(({ mediaType, data }) => ({ mediaType, data }));
   }
