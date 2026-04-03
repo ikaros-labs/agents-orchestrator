@@ -13,7 +13,7 @@ const sessions = new Map<string, Session>();
 
 export type StoreEvent =
   | { type: "session_created"; job: Session }
-  | { type: "session_status"; jobId: string; status: SessionStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; claudeSessionId: string | null; pendingTools: Session["pendingTools"]; archived: boolean; usage: SessionUsage | null; title: string | null }
+  | { type: "session_status"; jobId: string; status: SessionStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; claudeSessionId: string | null; pendingTools: Session["pendingTools"]; archived: boolean; usage: SessionUsage | null; title: string | null }
   | { type: "chat_entry"; jobId: string; entry: ChatEntry; index: number };
 
 const subscribers = new Set<(e: StoreEvent) => void>();
@@ -36,7 +36,6 @@ function emitSessionStatus(session: Session): void {
     finishedAt: session.finishedAt,
     result: session.result,
     error: session.error,
-    plan: session.plan,
     claudeSessionId: session.claudeSessionId,
     pendingTools: session.pendingTools,
     archived: session.archived,
@@ -123,7 +122,6 @@ export function createSession(id: string, prompt: string, tools: string[], cwd: 
     startedAt: null,
     finishedAt: null,
     chat: [],
-    plan: null,
     claudeSessionId: null,
     result: null,
     error: null,
@@ -175,14 +173,6 @@ export function patchChat(id: string, index: number, patch: Record<string, unkno
   Object.assign(entry, patch);
   persistSession(session);
   emit({ type: "chat_entry", jobId: id, entry: { ...entry } as ChatEntry, index });
-}
-
-export function setPlan(id: string, plan: string): void {
-  const session = getSessionOrWarn(id, "setPlan");
-  if (!session) return;
-  session.plan = plan;
-  persistSession(session);
-  emitSessionStatus(session);
 }
 
 export function setClaudeSessionId(id: string, claudeSessionId: string): void {

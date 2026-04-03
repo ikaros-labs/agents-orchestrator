@@ -36,7 +36,6 @@ export interface Session {
   cwd: string | null;
   useWorktree: boolean;
   worktreePath: string | null;
-  plan: string | null;
   claudeSessionId: string | null;
   result: string | null;
   error: string | null;
