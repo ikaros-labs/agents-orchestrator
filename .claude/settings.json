@@ -10,6 +10,7 @@
     ]
   },
   "sandbox": {
+    "excludedCommands": ["./dev-server.sh", "./server.sh"],
     "filesystem": {
       "allowWrite": ["/tmp/agents-orchestrator", "/root/.agent-orchestrator"]
     }
