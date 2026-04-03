@@ -27,7 +27,11 @@ PORT=$((RANDOM + 3100))
 mkdir -p /tmp/agents-orchestrator
 LOG_FILE=$(mktemp /tmp/agents-orchestrator/dev-server-XXXXXX.log)
 
-HOST=100.81.181.2 PORT=$PORT timeout 4h bun --env-file=/root/agents-orchestrator/.env run dev > "$LOG_FILE" 2>&1 &
+WORKTREE_HASH=$(echo "$TARGET_DIR" | md5sum | cut -c1-8)
+DEV_DATA_DIR="/tmp/agents-orchestrator/dev-data-$WORKTREE_HASH"
+mkdir -p "$DEV_DATA_DIR"
+
+HOST=100.81.181.2 PORT=$PORT AGENT_DATA_DIR=$DEV_DATA_DIR timeout 4h bun --env-file=/root/agents-orchestrator/.env run dev > "$LOG_FILE" 2>&1 &
 PID=$!
 echo "$PID" > "$PID_FILE"
 
