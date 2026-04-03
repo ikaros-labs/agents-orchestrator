@@ -1,10 +1,10 @@
-export type JobStatus = "pending" | "planning" | "awaiting_approval" | "awaiting_tool_approval" | "awaiting_user_question" | "running" | "completed" | "failed" | "stopped";
+export type SessionStatus = "pending" | "planning" | "awaiting_approval" | "awaiting_tool_approval" | "awaiting_user_question" | "running" | "completed" | "failed" | "stopped";
 
-export type JobMode = "auto" | "plan" | "edit";
-export type JobEffort = "low" | "medium" | "high" | "max";
+export type SessionMode = "auto" | "plan" | "edit";
+export type SessionEffort = "low" | "medium" | "high" | "max";
 export type SandboxMode = "none" | "sandbox" | "docker" | "approval";
 
-export type LogEntry =
+export type ChatEntry =
   | { type: "text"; text: string; ts: string }
   | { type: "user"; text: string; ts: string }
   | { type: "tool_call"; name: string; input?: Record<string, unknown>; toolUseId?: string; output?: string; ts: string }
@@ -15,34 +15,34 @@ export interface InputFile {
   filename: string;
 }
 
-export interface JobUsage {
+export interface SessionUsage {
   totalTokens: number;
   costUSD: number;
 }
 
-export interface Job {
+export interface Session {
   id: string;
-  status: JobStatus;
-  mode: JobMode;
+  status: SessionStatus;
+  mode: SessionMode;
   model: string | null;
-  effort: JobEffort | null;
+  effort: SessionEffort | null;
   prompt: string;
   title: string | null;
   tools: string[];
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
-  log: LogEntry[];
+  chat: ChatEntry[];
   cwd: string | null;
   useWorktree: boolean;
   worktreePath: string | null;
   plan: string | null;
-  sessionId: string | null;
+  claudeSessionId: string | null;
   result: string | null;
   error: string | null;
   images: InputFile[];
   pendingTools: Array<{ toolUseID: string; name: string; input: Record<string, unknown>; agentID?: string }>;
   archived: boolean;
   sandbox: SandboxMode;
-  usage: JobUsage | null;
+  usage: SessionUsage | null;
 }

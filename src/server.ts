@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import * as store from "./store.ts";
-import * as jobs from "./jobs.ts";
+import * as sessions from "./sessions.ts";
 import { removeWorktree } from "./worktree.ts";
 import { generateTitle } from "./title.ts";
-import { CreateJobSchema, ApproveJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
-import type { JobMode, SandboxMode } from "./types.ts";
+import { CreateSessionSchema, ApproveSessionSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
+import type { SessionMode, SandboxMode } from "./types.ts";
 
 const sseEncoder = new TextEncoder();
 
@@ -74,13 +74,13 @@ Bun.serve({
 
     // ── Saved images / documents ───────────────────────────────────────────
 
-    "/images/:jobId/:filename": async (req) => {
-      const { jobId, filename } = req.params;
+    "/images/:sessionId/:filename": async (req) => {
+      const { sessionId, filename } = req.params;
       // Sanitize: no path traversal
-      if (!/^[\w.-]+$/.test(jobId) || !/^[\w.-]+$/.test(filename)) {
+      if (!/^[\w.-]+$/.test(sessionId) || !/^[\w.-]+$/.test(filename)) {
         return jsonError(400, "Invalid image path");
       }
-      const file = Bun.file(`${jobs.IMAGES_DIR}/${jobId}/${filename}`);
+      const file = Bun.file(`${sessions.IMAGES_DIR}/${sessionId}/${filename}`);
       if (!(await file.exists())) return jsonError(404, "Image not found");
       const ext = filename.split(".").pop()?.toLowerCase() ?? "";
       return new Response(file, {
@@ -96,8 +96,8 @@ Bun.serve({
 
       const stream = new ReadableStream({
         start(controller) {
-          // Bootstrap the client with the full current job list
-          const snapshot = store.listJobs();
+          // Bootstrap the client with the full current session list
+          const snapshot = store.listSessions();
           controller.enqueue(sseEncoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
 
           // Forward every store mutation as a typed SSE event
@@ -136,34 +136,34 @@ Bun.serve({
       });
     },
 
-    // ── Jobs ───────────────────────────────────────────────────────────────
+    // ── Sessions ───────────────────────────────────────────────────────────
 
-    "/jobs": async (req) => {
+    "/sessions": async (req) => {
       if (req.method === "GET") {
-        return Response.json(store.listJobs());
+        return Response.json(store.listSessions());
       }
 
       if (req.method === "POST") {
-        const parsed = await parseBody(req, CreateJobSchema);
+        const parsed = await parseBody(req, CreateSessionSchema);
         if (parsed instanceof Response) return parsed;
         const { prompt, cwd = null, useWorktree, images: rawImages, mode, model, effort, sandbox } = parsed.data;
 
-        const tools = jobs.DEFAULT_TOOLS;
+        const tools = sessions.DEFAULT_TOOLS;
         const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
 
         // Build InputFile refs (filenames will be <index>.<ext>)
         const inputImageRefs = rawImages.map((img, i) => ({
           mediaType: img.mediaType,
-          filename: `${i}.${jobs.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
+          filename: `${i}.${sessions.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
         }));
 
-        store.createJob(id, prompt, tools, cwd, inputImageRefs, mode as JobMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
+        store.createSession(id, prompt, tools, cwd, inputImageRefs, mode as SessionMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
         generateTitle(prompt, rawImages).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
-          Promise.resolve().then(() => jobs.directExecuteJob(id, prompt, tools, cwd, rawImages, useWorktree));
+          Promise.resolve().then(() => sessions.directExecuteSession(id, prompt, tools, cwd, rawImages, useWorktree));
         } else {
           // "auto" and "plan" both use the planning flow
-          Promise.resolve().then(() => jobs.planJob(id, prompt, tools, cwd, rawImages, useWorktree));
+          Promise.resolve().then(() => sessions.planSession(id, prompt, tools, cwd, rawImages, useWorktree));
         }
 
         return Response.json({ id, status: "pending" }, { status: 202 });
@@ -172,161 +172,161 @@ Bun.serve({
       return new Response("Method Not Allowed", { status: 405 });
     },
 
-    // ── Single job ─────────────────────────────────────────────────────────
+    // ── Single session ─────────────────────────────────────────────────────
 
-    "/jobs/:id": (req) => {
+    "/sessions/:id": (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      return Response.json(job);
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      return Response.json(session);
     },
 
     // ── Plan approval lifecycle ────────────────────────────────────────────
 
-    "/jobs/:id/approve": async (req) => {
+    "/sessions/:id/approve": async (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
-      if (!job.sessionId) return jsonError(500, "No session ID from planning phase");
-      const parsed = await parseBody(req, ApproveJobSchema);
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      if (session.status !== "awaiting_approval") return jsonError(409, "Session is not awaiting approval");
+      if (!session.claudeSessionId) return jsonError(500, "No Claude session ID from planning phase");
+      const parsed = await parseBody(req, ApproveSessionSchema);
       if (!(parsed instanceof Response) && parsed.data.model) {
         store.setModel(id, parsed.data.model);
       }
-      Promise.resolve().then(() => jobs.executeJob(id, job.sessionId!, job.tools, job.worktreePath ?? job.cwd));
+      Promise.resolve().then(() => sessions.executeSession(id, session.claudeSessionId!, session.tools, session.worktreePath ?? session.cwd));
       return Response.json({ id, status: "running" }, { status: 202 });
     },
 
-    "/jobs/:id/reject": (req) => {
+    "/sessions/:id/reject": (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      if (session.status !== "awaiting_approval") return jsonError(409, "Session is not awaiting approval");
       store.setError(id, "Rejected by user");
       store.setStatus(id, "failed");
       return Response.json({ id, status: "failed" });
     },
 
-    "/jobs/:id/revise": async (req) => {
+    "/sessions/:id/revise": async (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
-      if (!job.sessionId) return jsonError(500, "No session ID available for revision");
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      if (session.status !== "awaiting_approval") return jsonError(409, "Session is not awaiting approval");
+      if (!session.claudeSessionId) return jsonError(500, "No Claude session ID available for revision");
       const parsed = await parseBody(req, ReviseSchema);
       if (parsed instanceof Response) return parsed;
-      Promise.resolve().then(() => jobs.revisePlanJob(id, parsed.data.prompt, job.sessionId!, job.tools, job.worktreePath ?? job.cwd));
+      Promise.resolve().then(() => sessions.revisePlanSession(id, parsed.data.prompt, session.claudeSessionId!, session.tools, session.worktreePath ?? session.cwd));
       return Response.json({ id, status: "planning" }, { status: 202 });
     },
 
     // ── Tool approval ──────────────────────────────────────────────────────
 
-    "/jobs/:id/approve-tool": async (req) => {
+    "/sessions/:id/approve-tool": async (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      if (job.sandbox !== "approval") return jsonError(409, "Job does not use approval mode");
-      if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      if (session.sandbox !== "approval") return jsonError(409, "Session does not use approval mode");
+      if (session.status !== "awaiting_tool_approval") return jsonError(409, "Session is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;
       const { toolUseID } = parsed.data;
-      if (!jobs.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
-      const pendingTool = job.pendingTools.find(t => t.toolUseID === toolUseID);
+      if (!sessions.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
+      const pendingTool = session.pendingTools.find(t => t.toolUseID === toolUseID);
       const approvedInput = pendingTool?.input ?? {};
       console.log(`[approve-tool] id=${id} tool=${pendingTool?.name} toolUseID=${toolUseID} → granted`);
       store.removePendingTool(id, toolUseID);
-      if (job.pendingTools.length === 0) store.setStatus(id, "running");
-      jobs.resolveToolApproval(id, toolUseID, { behavior: "allow", updatedInput: approvedInput });
-      return Response.json({ id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" }, { status: 202 });
+      if (session.pendingTools.length === 0) store.setStatus(id, "running");
+      sessions.resolveToolApproval(id, toolUseID, { behavior: "allow", updatedInput: approvedInput });
+      return Response.json({ id, status: session.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" }, { status: 202 });
     },
 
-    "/jobs/:id/reject-tool": async (req) => {
+    "/sessions/:id/reject-tool": async (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      if (job.sandbox !== "approval") return jsonError(409, "Job does not use approval mode");
-      if (job.status !== "awaiting_tool_approval") return jsonError(409, "Job is not awaiting tool approval");
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      if (session.sandbox !== "approval") return jsonError(409, "Session does not use approval mode");
+      if (session.status !== "awaiting_tool_approval") return jsonError(409, "Session is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;
       const { toolUseID, reason } = parsed.data;
-      if (!jobs.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
-      const pendingTool = job.pendingTools.find(t => t.toolUseID === toolUseID);
+      if (!sessions.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
+      const pendingTool = session.pendingTools.find(t => t.toolUseID === toolUseID);
       console.log(`[reject-tool] id=${id} tool=${pendingTool?.name} toolUseID=${toolUseID} → denied`);
       store.removePendingTool(id, toolUseID);
-      if (job.pendingTools.length === 0) store.setStatus(id, "running");
-      jobs.resolveToolApproval(id, toolUseID, { behavior: "deny", message: reason?.trim() || "User denied this tool call" });
-      return Response.json({ id, status: job.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
+      if (session.pendingTools.length === 0) store.setStatus(id, "running");
+      sessions.resolveToolApproval(id, toolUseID, { behavior: "deny", message: reason?.trim() || "User denied this tool call" });
+      return Response.json({ id, status: session.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
     },
 
     // ── AskUserQuestion ────────────────────────────────────────────────────
 
-    "/jobs/:id/answer-question": async (req) => {
+    "/sessions/:id/answer-question": async (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      if (job.status !== "awaiting_user_question") return jsonError(409, "Job is not awaiting a user question");
-      const askToolEntry = job.pendingTools.find(t => t.name === "AskUserQuestion");
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      if (session.status !== "awaiting_user_question") return jsonError(409, "Session is not awaiting a user question");
+      const askToolEntry = session.pendingTools.find(t => t.name === "AskUserQuestion");
       if (!askToolEntry) return jsonError(500, "No AskUserQuestion tool found in pending tools");
-      if (!jobs.hasPendingApproval(id, askToolEntry.toolUseID)) return jsonError(500, "No pending question resolver found");
+      if (!sessions.hasPendingApproval(id, askToolEntry.toolUseID)) return jsonError(500, "No pending question resolver found");
       const parsed = await parseBody(req, AnswerQuestionSchema);
       if (parsed instanceof Response) return parsed;
       const { answers } = parsed.data;
       const questions = ((askToolEntry.input as any)?.questions) ?? [];
-      // Log answers to the job feed so they're visible in the conversation
+      // Log answers to the session feed so they're visible in the conversation
       const ts = new Date().toISOString();
       const answerText = (questions as any[]).map((q: any) => {
         const ans = answers[q.question] ?? "(no answer)";
         return `${q.question}\n→ ${ans}`;
       }).join("\n\n");
-      if (answerText) store.appendLog(id, { type: "user", text: answerText, ts });
+      if (answerText) store.appendChat(id, { type: "user", text: answerText, ts });
       store.removePendingTool(id, askToolEntry.toolUseID);
       // Return to "planning" if we haven't produced a plan yet, otherwise "running"
-      store.setStatus(id, job.plan === null ? "planning" : "running");
-      jobs.resolveToolApproval(id, askToolEntry.toolUseID, { behavior: "allow", updatedInput: { questions, answers } });
+      store.setStatus(id, session.plan === null ? "planning" : "running");
+      sessions.resolveToolApproval(id, askToolEntry.toolUseID, { behavior: "allow", updatedInput: { questions, answers } });
       return Response.json({ id, status: "running" }, { status: 202 });
     },
 
     // ── Stop ───────────────────────────────────────────────────────────────
 
-    "/jobs/:id/stop": (req) => {
+    "/sessions/:id/stop": (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      if (!jobs.stopJob(id)) return Response.json({ id, message: "nothing to stop" });
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      if (!sessions.stopSession(id)) return Response.json({ id, message: "nothing to stop" });
       return Response.json({ id, status: "stopped" });
     },
 
     // ── Archive ────────────────────────────────────────────────────────────
 
-    "/jobs/:id/archive": (req) => {
+    "/sessions/:id/archive": (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
       store.setArchived(id, true);
-      if (job.worktreePath) removeWorktree(job);
+      if (session.worktreePath) removeWorktree(session);
       return Response.json({ ok: true });
     },
 
-    "/jobs/:id/unarchive": (req) => {
+    "/sessions/:id/unarchive": (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
       store.setArchived(id, false);
       return Response.json({ ok: true });
     },
 
     // ── Follow-up ──────────────────────────────────────────────────────────
 
-    "/jobs/:id/followup": async (req) => {
+    "/sessions/:id/followup": async (req) => {
       const { id } = req.params;
-      const job = store.getJob(id);
-      if (!job) return jsonError(404, "Job not found");
-      if (job.status !== "completed" && job.status !== "failed" && job.status !== "stopped") return jsonError(409, "Job is not completed");
-      if (!job.sessionId && job.status !== "stopped") return jsonError(500, "No session ID available for follow-up");
+      const session = store.getSession(id);
+      if (!session) return jsonError(404, "Session not found");
+      if (session.status !== "completed" && session.status !== "failed" && session.status !== "stopped") return jsonError(409, "Session is not completed");
+      if (!session.claudeSessionId && session.status !== "stopped") return jsonError(500, "No Claude session ID available for follow-up");
       const parsed = await parseBody(req, FollowUpSchema);
       if (parsed instanceof Response) return parsed;
       const { prompt, images: rawImages } = parsed.data;
-      Promise.resolve().then(() => jobs.followUpJob(id, prompt, job.sessionId, job.tools, job.worktreePath ?? job.cwd, rawImages));
+      Promise.resolve().then(() => sessions.followUpSession(id, prompt, session.claudeSessionId, session.tools, session.worktreePath ?? session.cwd, rawImages));
       return Response.json({ id, status: "running" }, { status: 202 });
     },
   },

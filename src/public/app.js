@@ -12,21 +12,21 @@ function goBack() { showMobilePanel('sidebar'); }
 function showNewTask() {
   selectedId = null;
   history.replaceState(null, '', location.pathname);
-  document.querySelectorAll('.job-item').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.session-item').forEach(el => el.classList.remove('selected'));
   document.getElementById('new-task-panel').classList.remove('hidden');
   document.getElementById('detail').classList.add('hidden');
   document.getElementById('prompt').focus();
   if (isMobile()) showMobilePanel('detail');
 }
 
-let jobs = {};
+let sessions = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
 let currentMode = 'auto';
 let currentModel = 'claude-sonnet-4-6';
 let currentEffort = 'high';
 let currentSandbox = 'sandbox';
 let showArchived = false;
-const approvalModels = {}; // jobId → model selected for execution at approval time
+const approvalModels = {}; // sessionId → model selected for execution at approval time
 
 // ── File attachment state ───────────────────────────────────────────────────
 let pendingFiles = []; // { mediaType, data, objectUrl, name }
@@ -126,7 +126,7 @@ function setModel(model) {
 
 function setApprovalModel(id, model) {
   approvalModels[id] = model;
-  document.querySelectorAll(`.approval-model-btn[data-job="${id}"]`).forEach(btn => {
+  document.querySelectorAll(`.approval-model-btn[data-session="${id}"]`).forEach(btn => {
     btn.classList.toggle('active', btn.dataset.model === model);
   });
 }
@@ -186,7 +186,7 @@ function md(text) {
   return DOMPurify.sanitize(marked.parse(String(text)));
 }
 
-// ── Job list ───────────────────────────────────────────────────────────────
+// ── Session list ───────────────────────────────────────────────────────────
 function renderList(list) {
   // Update sidebar header with archive toggle
   const archivedCount = list.filter(j => j.archived).length;
@@ -208,23 +208,23 @@ function renderList(list) {
   }
 
   const visible = showArchived ? list : list.filter(j => !j.archived);
-  const el = document.getElementById('job-list');
+  const el = document.getElementById('session-list');
   if (!visible.length) {
-    el.innerHTML = `<div class="job-list-empty">${list.length && !showArchived ? 'No active jobs' : 'No jobs yet'}</div>`;
+    el.innerHTML = `<div class="session-list-empty">${list.length && !showArchived ? 'No active sessions' : 'No sessions yet'}</div>`;
     return;
   }
   el.innerHTML = visible.map(j => `
-    <div class="job-item${selectedId === j.id ? ' selected' : ''}${j.archived ? ' archived' : ''}" onclick="selectJob('${j.id}')">
-      <div class="job-item-top">
+    <div class="session-item${selectedId === j.id ? ' selected' : ''}${j.archived ? ' archived' : ''}" onclick="selectJob('${j.id}')">
+      <div class="session-item-top">
         ${badge(j.status)}
         ${j.mode && j.mode !== 'auto' ? `<span class="mode-tag mode-tag-${j.mode}">${j.mode}</span>` : ''}
         ${j.model && j.model !== 'claude-sonnet-4-6' ? `<span class="mode-tag mode-tag-${j.model === 'claude-haiku-4-5-20251001' ? 'haiku' : 'opus'}">${j.model === 'claude-haiku-4-5-20251001' ? 'haiku' : 'opus'}</span>` : ''}
         ${j.effort && j.effort !== 'high' ? `<span class="mode-tag mode-tag-${j.effort}">${j.effort}</span>` : ''}
         ${j.sandbox && j.sandbox !== 'none' ? `<span class="mode-tag mode-tag-${j.sandbox}">${j.sandbox === 'approval' ? '🔒' : j.sandbox === 'docker' ? '🐳' : '🛡️'}</span>` : ''}
-        <span class="job-time">${relTime(j.createdAt)}</span>
+        <span class="session-time">${relTime(j.createdAt)}</span>
       </div>
-      <div class="job-prompt">${escHtml(j.title || j.prompt)}</div>
-      ${j.images && j.images.length ? `<div class="job-image-badge">📎 ${j.images.length} file${j.images.length > 1 ? 's' : ''}</div>` : ''}
+      <div class="session-prompt">${escHtml(j.title || j.prompt)}</div>
+      ${j.images && j.images.length ? `<div class="session-image-badge">📎 ${j.images.length} file${j.images.length > 1 ? 's' : ''}</div>` : ''}
       ${j.cwd ? `<div style="font-size:10px;color:#555;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.cwd)}</div>` : ''}
     </div>
   `).join('');
@@ -260,7 +260,7 @@ function renderTodoWrite(todos) {
       <span class="todo-content">${escHtml(String(t.content ?? ''))}</span>
     </div>`;
   }).join('');
-  return `<div class="log-todo">${items}</div>`;
+  return `<div class="chat-todo">${items}</div>`;
 }
 
 function renderBashTool(e) {
@@ -280,27 +280,27 @@ function renderBashTool(e) {
     bodyHtml += `<div class="tool-expand-row${outClass}"><span class="tool-expand-key">out</span><pre class="tool-expand-code">${outText}</pre></div>`;
   }
 
-  return `<details class="log-tool-bash">
-    <summary class="log-tool">Bash <span class="tool-detail">${summary}</span></summary>
+  return `<details class="chat-tool-bash">
+    <summary class="chat-tool">Bash <span class="tool-detail">${summary}</span></summary>
     <div class="tool-expand-body">${bodyHtml}</div>
   </details>`;
 }
 
-function renderLogEntry(e, cwd) {
+function renderChatEntry(e, cwd) {
   if (e.type === 'user') {
-    return `<div class="log-user">${escHtml(e.text)}</div>`;
+    return `<div class="chat-user">${escHtml(e.text)}</div>`;
   }
   if (e.type === 'text') {
-    return `<div class="log-text markdown-body">${md(e.text)}</div>`;
+    return `<div class="chat-text markdown-body">${md(e.text)}</div>`;
   }
   if (e.type === 'tool_call') {
     if (e.name === 'ExitPlanMode') return '';
     if (e.name === 'TodoWrite') return renderTodoWrite(e.input?.todos);
     if (e.name === 'Bash') return renderBashTool(e);
-    return `<div class="log-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
+    return `<div class="chat-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
   if (e.type === 'image') {
-    return `<div class="log-image"><img src="${escHtml(e.url)}" alt="Image" loading="lazy"></div>`;
+    return `<div class="chat-image"><img src="${escHtml(e.url)}" alt="Image" loading="lazy"></div>`;
   }
   return '';
 }
@@ -422,7 +422,7 @@ function _snapshotQuestionAnswers(job) {
 }
 
 async function answerQuestion(id) {
-  const job = jobs[id];
+  const job = sessions[id];
   if (!job) return;
   const askTool = (job.pendingTools ?? []).find(t => t.name === 'AskUserQuestion');
   const questions = askTool?.input?.questions ?? [];
@@ -457,15 +457,15 @@ async function answerQuestion(id) {
   const btn = document.getElementById(`answer-btn-${id}`);
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
   try {
-    await fetch(`/jobs/${id}/answer-question`, {
+    await fetch(`/sessions/${id}/answer-question`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ answers }),
     });
     delete questionAnswers[id];
-    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(err => { console.warn('[answerQuestion] failed to refresh job:', err); return null; });
-    if (refreshed) { jobs[id] = refreshed; renderDetailFresh = true; renderDetail(refreshed); }
-    // SSE will deliver subsequent log_entry and job_status events
+    const refreshed = await fetch('/sessions/' + id).then(r => r.json()).catch(err => { console.warn('[answerQuestion] failed to refresh session:', err); return null; });
+    if (refreshed) { sessions[id] = refreshed; renderDetailFresh = true; renderDetail(refreshed); }
+    // SSE will deliver subsequent chat_entry and session_status events
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Submit Answers'; }
   }
@@ -495,9 +495,9 @@ function renderApproveBar(job) {
     <div class="approve-model-row">
       <span class="approve-model-label">Run with</span>
       <div class="mode-selector">
-        <button class="mode-btn approval-model-btn ${isActive('claude-haiku-4-5-20251001')}" data-job="${job.id}" data-model="claude-haiku-4-5-20251001" onclick="setApprovalModel('${job.id}', 'claude-haiku-4-5-20251001')">Haiku</button>
-        <button class="mode-btn approval-model-btn ${isActive('claude-sonnet-4-6')}" data-job="${job.id}" data-model="claude-sonnet-4-6" onclick="setApprovalModel('${job.id}', 'claude-sonnet-4-6')">Sonnet</button>
-        <button class="mode-btn approval-model-btn ${isActive('claude-opus-4-6')}" data-job="${job.id}" data-model="claude-opus-4-6" onclick="setApprovalModel('${job.id}', 'claude-opus-4-6')">Opus</button>
+        <button class="mode-btn approval-model-btn ${isActive('claude-haiku-4-5-20251001')}" data-session="${job.id}" data-model="claude-haiku-4-5-20251001" onclick="setApprovalModel('${job.id}', 'claude-haiku-4-5-20251001')">Haiku</button>
+        <button class="mode-btn approval-model-btn ${isActive('claude-sonnet-4-6')}" data-session="${job.id}" data-model="claude-sonnet-4-6" onclick="setApprovalModel('${job.id}', 'claude-sonnet-4-6')">Sonnet</button>
+        <button class="mode-btn approval-model-btn ${isActive('claude-opus-4-6')}" data-session="${job.id}" data-model="claude-opus-4-6" onclick="setApprovalModel('${job.id}', 'claude-opus-4-6')">Opus</button>
       </div>
     </div>
     <div class="approve-actions">
@@ -547,7 +547,7 @@ function renderToolApprovalBar(job) {
 }
 
 function renderFollowUpBar(job) {
-  const showFollowUp = ((job.status === 'completed' || job.status === 'failed') && job.sessionId) || job.status === 'stopped';
+  const showFollowUp = ((job.status === 'completed' || job.status === 'failed') && job.claudeSessionId) || job.status === 'stopped';
   if (!showFollowUp) return '';
   return `<div class="followup-bar">
     <div class="followup-input-row">
@@ -589,9 +589,9 @@ function renderDetailHeader(job) {
   </div>`;
 }
 
-/** Capture scroll position of #log-feed before a DOM rebuild. */
+/** Capture scroll position of #chat-feed before a DOM rebuild. */
 function captureScrollState() {
-  const feed = document.getElementById('log-feed');
+  const feed = document.getElementById('chat-feed');
   if (!feed || renderDetailFresh) return { wasAtBottom: true, scrollTop: 0, scrollHeight: 0 };
   const scrollTop = feed.scrollTop;
   const scrollHeight = feed.scrollHeight;
@@ -602,7 +602,7 @@ function captureScrollState() {
 
 /** Restore scroll position after a DOM rebuild, anchoring the viewport if not at bottom. */
 function restoreScrollState(state) {
-  const feed = document.getElementById('log-feed');
+  const feed = document.getElementById('chat-feed');
   if (!feed) return;
   if (renderDetailFresh || state.wasAtBottom) {
     feed.scrollTop = feed.scrollHeight; // auto-scroll to bottom
@@ -660,18 +660,18 @@ function attachTextareaListeners(jobId) {
 }
 
 function renderDetail(job) {
-  if (!job) { document.getElementById('detail').innerHTML = '<div class="detail-empty">Select a job to see details</div>'; return; }
+  if (!job) { document.getElementById('detail').innerHTML = '<div class="detail-empty">Select a session to see details</div>'; return; }
   // Snapshot question answers BEFORE rebuilding DOM so selections are preserved
   _snapshotQuestionAnswers(job);
   const scrollState = captureScrollState();
   const inputState = captureInputState(job.id);
 
-  const feedHtml = `<div class="log-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`
-    + job.log.map(e => renderLogEntry(e, job.worktreePath ?? job.cwd)).join('');
+  const feedHtml = `<div class="chat-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`
+    + job.chat.map(e => renderChatEntry(e, job.worktreePath ?? job.cwd)).join('');
 
   document.getElementById('detail').innerHTML = `
     ${renderDetailHeader(job)}
-    <div class="log-feed" id="log-feed">${feedHtml}</div>
+    <div class="chat-feed" id="chat-feed">${feedHtml}</div>
     ${renderPlanCard(job)}
     ${renderResultBox(job)}
     ${renderQuestionBar(job)}
@@ -731,58 +731,58 @@ function removeReviseImage(jobId, index) { removeJobImage(reviseImages, 'revise'
 async function selectJob(id) {
   selectedId = id;
   history.replaceState(null, '', '#' + id);
-  document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(id)));
+  document.querySelectorAll('.session-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(id)));
   document.getElementById('new-task-panel').classList.add('hidden');
   document.getElementById('detail').classList.remove('hidden');
-  const job = await fetch('/jobs/' + id).then(r => r.json());
-  jobs[id] = job;
+  const session = await fetch('/sessions/' + id).then(r => r.json());
+  sessions[id] = session;
   renderDetailFresh = true; // fresh view, always scroll to bottom
-  renderDetail(job);
+  renderDetail(session);
   if (isMobile()) showMobilePanel('detail');
 }
 
 // ── SSE real-time updates ───────────────────────────────────────────────────
 
-/** Sort jobs by latest user-message time, mirroring the server's listJobs() order. */
-function _latestUserMsgTime(job) {
-  const times = (job.log || []).filter(e => e.type === 'user').map(e => new Date(e.ts).getTime());
-  return Math.max(new Date(job.createdAt).getTime(), ...times, 0);
+/** Sort sessions by latest user-message time, mirroring the server's listSessions() order. */
+function _latestUserMsgTime(session) {
+  const times = (session.chat || []).filter(e => e.type === 'user').map(e => new Date(e.ts).getTime());
+  return Math.max(new Date(session.createdAt).getTime(), ...times, 0);
 }
 function getSortedJobs() {
-  return Object.values(jobs).sort((a, b) => _latestUserMsgTime(b) - _latestUserMsgTime(a));
+  return Object.values(sessions).sort((a, b) => _latestUserMsgTime(b) - _latestUserMsgTime(a));
 }
 
 /**
- * Append a single log entry to the visible #log-feed without rebuilding the
+ * Append a single chat entry to the visible #chat-feed without rebuilding the
  * entire detail panel. Only runs when jobId === selectedId and the feed exists.
  * When index is provided, updates an existing element if present (for patches like Bash output).
  */
-function appendLogEntryDOM(entry, jobId, index) {
+function appendChatEntryDOM(entry, jobId, index) {
   if (jobId !== selectedId) return;
-  const feed = document.getElementById('log-feed');
+  const feed = document.getElementById('chat-feed');
   if (!feed) return;
-  let html = renderLogEntry(entry, jobs[jobId]?.worktreePath ?? jobs[jobId]?.cwd);
+  let html = renderChatEntry(entry, sessions[jobId]?.worktreePath ?? sessions[jobId]?.cwd);
   if (!html) return;
-  // Inject data-log-index into the root element so we can find it for updates
+  // Inject data-chat-index into the root element so we can find it for updates
   if (index !== undefined) {
-    html = html.replace(/^(<\w+)/, `$1 data-log-index="${index}"`);
+    html = html.replace(/^(<\w+)/, `$1 data-chat-index="${index}"`);
   }
   // If element with this index already exists, update it in-place
   if (index !== undefined) {
-    const existing = feed.querySelector(`[data-log-index="${index}"]`);
+    const existing = feed.querySelector(`[data-chat-index="${index}"]`);
     if (existing) {
       const wasOpen = existing.tagName === 'DETAILS' ? existing.open : existing.querySelector('details')?.open;
       existing.outerHTML = html;
       if (wasOpen) {
-        const updated = feed.querySelector(`[data-log-index="${index}"]`);
+        const updated = feed.querySelector(`[data-chat-index="${index}"]`);
         const details = updated?.tagName === 'DETAILS' ? updated : updated?.querySelector('details');
         if (details) details.open = true;
       }
       return;
     }
   }
-  // Remove the "No log entries yet" placeholder on first real entry
-  if (!feed.querySelector('.log-text, .log-user, .log-tool, .log-image, .log-tool-bash')) {
+  // Remove placeholder on first real entry
+  if (!feed.querySelector('.chat-text, .chat-user, .chat-tool, .chat-image, .chat-tool-bash')) {
     feed.innerHTML = '';
   }
   const wasAtBottom = (feed.scrollHeight - feed.clientHeight - feed.scrollTop) <= 80;
@@ -793,31 +793,31 @@ function appendLogEntryDOM(entry, jobId, index) {
 function initSSE() {
   const es = new EventSource('/events');
 
-  // Initial snapshot: full current state of all jobs (sent on every connect/reconnect)
+  // Initial snapshot: full current state of all sessions (sent on every connect/reconnect)
   es.addEventListener('snapshot', e => {
     const list = JSON.parse(e.data);
-    list.forEach(j => { jobs[j.id] = j; });
+    list.forEach(j => { sessions[j.id] = j; });
     renderList(list); // already server-sorted
     updateCwdSelect(list);
     const hashId = location.hash.slice(1);
-    if (hashId && jobs[hashId] && !selectedId) {
+    if (hashId && sessions[hashId] && !selectedId) {
       // First load: restore from hash using snapshot data (no extra fetch)
       selectedId = hashId;
-      document.querySelectorAll('.job-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(hashId)));
+      document.querySelectorAll('.session-item').forEach(el => el.classList.toggle('selected', el.onclick.toString().includes(hashId)));
       document.getElementById('new-task-panel').classList.add('hidden');
       document.getElementById('detail').classList.remove('hidden');
       renderDetailFresh = true;
-      renderDetail(jobs[hashId]);
+      renderDetail(sessions[hashId]);
       if (isMobile()) showMobilePanel('detail');
-    } else if (selectedId && jobs[selectedId]) {
-      renderDetail(jobs[selectedId]);
+    } else if (selectedId && sessions[selectedId]) {
+      renderDetail(sessions[selectedId]);
     }
   });
 
-  // A brand-new job was created
-  es.addEventListener('job_created', e => {
+  // A brand-new session was created
+  es.addEventListener('session_created', e => {
     const { job } = JSON.parse(e.data);
-    jobs[job.id] = job;
+    sessions[job.id] = job;
     const sorted = getSortedJobs();
     renderList(sorted);
     updateCwdSelect(sorted);
@@ -827,30 +827,30 @@ function initSSE() {
     }
   });
 
-  // Job metadata changed: status, result, error, plan, pendingTools, timestamps, archived
-  es.addEventListener('job_status', e => {
+  // Session metadata changed: status, result, error, plan, pendingTools, timestamps, archived
+  es.addEventListener('session_status', e => {
     const data = JSON.parse(e.data);
-    const { jobId, status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage, title } = data;
-    const job = jobs[jobId];
-    if (!job) return;
-    const prevStatus = job.status;
-    Object.assign(job, { status, startedAt, finishedAt, result, error, plan, sessionId, pendingTools, archived, usage, title });
+    const { jobId, status, startedAt, finishedAt, result, error, plan, claudeSessionId, pendingTools, archived, usage, title } = data;
+    const session = sessions[jobId];
+    if (!session) return;
+    const prevStatus = session.status;
+    Object.assign(session, { status, startedAt, finishedAt, result, error, plan, claudeSessionId, pendingTools, archived, usage, title });
     renderList(getSortedJobs());
     if (jobId === selectedId) {
       if (prevStatus !== status) renderDetailFresh = true;
-      renderDetail(job);
+      renderDetail(session);
     }
   });
 
-  // A new log entry was appended — stream it directly into the feed DOM
-  es.addEventListener('log_entry', e => {
+  // A new chat entry was appended — stream it directly into the feed DOM
+  es.addEventListener('chat_entry', e => {
     const { jobId, entry, index } = JSON.parse(e.data);
-    const job = jobs[jobId];
-    if (!job) return;
-    // Keep the local log array in sync (sparse-safe)
-    while (job.log.length <= index) job.log.push(null);
-    job.log[index] = entry;
-    appendLogEntryDOM(entry, jobId, index);
+    const session = sessions[jobId];
+    if (!session) return;
+    // Keep the local chat array in sync (sparse-safe)
+    while (session.chat.length <= index) session.chat.push(null);
+    session.chat[index] = entry;
+    appendChatEntryDOM(entry, jobId, index);
     // Re-sort sidebar when a new user message arrives (followup changes sort key)
     if (entry.type === 'user') renderList(getSortedJobs());
   });
@@ -862,30 +862,30 @@ function initSSE() {
 }
 
 async function stopJob(id) {
-  await fetch('/jobs/' + id + '/stop', { method: 'POST' });
-  // SSE job_status event will update the detail panel
+  await fetch('/sessions/' + id + '/stop', { method: 'POST' });
+  // SSE session_status event will update the detail panel
 }
 
 async function archiveJob(id) {
-  await fetch('/jobs/' + id + '/archive', { method: 'POST' });
-  // SSE job_status event will update the detail panel and list
+  await fetch('/sessions/' + id + '/archive', { method: 'POST' });
+  // SSE session_status event will update the detail panel and list
 }
 
 async function unarchiveJob(id) {
-  await fetch('/jobs/' + id + '/unarchive', { method: 'POST' });
-  // SSE job_status event will update the detail panel and list
+  await fetch('/sessions/' + id + '/unarchive', { method: 'POST' });
+  // SSE session_status event will update the detail panel and list
 }
 
 async function approveToolUse(id, toolUseID) {
-  await fetch('/jobs/' + id + '/approve-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolUseID }) });
-  // SSE job_status event will update the detail panel
+  await fetch('/sessions/' + id + '/approve-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolUseID }) });
+  // SSE session_status event will update the detail panel
 }
 
 async function rejectToolUse(id, toolUseID, btn) {
   const reason = btn?.previousElementSibling?.value?.trim() || '';
   const body = reason ? { toolUseID, reason } : { toolUseID };
-  await fetch('/jobs/' + id + '/reject-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  // SSE job_status event will update the detail panel
+  await fetch('/sessions/' + id + '/reject-tool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  // SSE session_status event will update the detail panel
 }
 
 async function approveJob(id) {
@@ -893,13 +893,13 @@ async function approveJob(id) {
   const opts = model
     ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) }
     : { method: 'POST' };
-  await fetch('/jobs/' + id + '/approve', opts);
-  // SSE job_status event will deliver the transition and scroll to bottom
+  await fetch('/sessions/' + id + '/approve', opts);
+  // SSE session_status event will deliver the transition and scroll to bottom
 }
 
 async function rejectJob(id) {
-  await fetch('/jobs/' + id + '/reject', { method: 'POST' });
-  // SSE job_status event will deliver the transition and scroll to bottom
+  await fetch('/sessions/' + id + '/reject', { method: 'POST' });
+  // SSE session_status event will deliver the transition and scroll to bottom
 }
 
 async function requestChanges(id) {
@@ -912,7 +912,7 @@ async function requestChanges(id) {
   const body = { prompt };
   if (imgs.length) body.images = imgs.map(({ mediaType, data }) => ({ mediaType, data }));
   try {
-    await fetch('/jobs/' + id + '/revise', {
+    await fetch('/sessions/' + id + '/revise', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
@@ -921,13 +921,13 @@ async function requestChanges(id) {
     (reviseImages[id] || []).forEach(img => URL.revokeObjectURL(img.objectUrl));
     delete reviseImages[id];
     selectedId = id;
-    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(err => { console.warn('[requestChanges] failed to refresh job:', err); return null; });
+    const refreshed = await fetch('/sessions/' + id).then(r => r.json()).catch(err => { console.warn('[requestChanges] failed to refresh session:', err); return null; });
     if (refreshed) {
-      jobs[id] = refreshed;
+      sessions[id] = refreshed;
       renderDetailFresh = true;
       renderDetail(refreshed);
     }
-    // SSE will deliver subsequent log_entry and job_status events
+    // SSE will deliver subsequent chat_entry and session_status events
   } finally {
     btn.disabled = false; btn.textContent = 'Request Changes';
   }
@@ -943,7 +943,7 @@ async function sendFollowUp(id) {
   const body = { prompt };
   if (imgs.length) body.images = imgs.map(({ mediaType, data }) => ({ mediaType, data }));
   try {
-    await fetch('/jobs/' + id + '/followup', {
+    await fetch('/sessions/' + id + '/followup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
@@ -954,13 +954,13 @@ async function sendFollowUp(id) {
     delete followupImages[id];
     selectedId = id;
     // Refresh the detail view immediately so the user prompt appears without waiting for SSE.
-    const refreshed = await fetch('/jobs/' + id).then(r => r.json()).catch(err => { console.warn('[sendFollowUp] failed to refresh job:', err); return null; });
+    const refreshed = await fetch('/sessions/' + id).then(r => r.json()).catch(err => { console.warn('[sendFollowUp] failed to refresh session:', err); return null; });
     if (refreshed) {
-      jobs[id] = refreshed;
+      sessions[id] = refreshed;
       renderDetailFresh = true;
       renderDetail(refreshed);
     }
-    // SSE will deliver subsequent log_entry and job_status events
+    // SSE will deliver subsequent chat_entry and session_status events
   } finally {
     btn.disabled = false; btn.textContent = 'Send Follow-up';
   }
@@ -981,7 +981,7 @@ async function submitJob() {
   const btn = document.getElementById('submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting...';
   try {
-    const res = await fetch('/jobs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const res = await fetch('/sessions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const { id } = await res.json();
     document.getElementById('prompt').value = '';
     // clear file attachments
@@ -989,13 +989,13 @@ async function submitJob() {
     pendingFiles = [];
     renderFilePreviews();
     selectedId = id;
-    // Fetch and show the new job immediately; SSE will deliver all subsequent updates
-    const job = await fetch('/jobs/' + id).then(r => r.json()).catch(() => null);
-    if (job) {
-      jobs[id] = job;
+    // Fetch and show the new session immediately; SSE will deliver all subsequent updates
+    const session = await fetch('/sessions/' + id).then(r => r.json()).catch(() => null);
+    if (session) {
+      sessions[id] = session;
       document.getElementById('new-task-panel').classList.add('hidden');
       document.getElementById('detail').classList.remove('hidden');
-      renderDetailFresh = true; renderDetail(job); if (isMobile()) showMobilePanel('detail');
+      renderDetailFresh = true; renderDetail(session); if (isMobile()) showMobilePanel('detail');
     }
   } finally {
     btn.disabled = false; btn.textContent = 'Run Agent';

@@ -1,20 +1,20 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { InputFile, Job, JobEffort, JobMode, JobStatus, JobUsage, LogEntry, SandboxMode } from "./types.ts";
+import type { InputFile, Session, SessionEffort, SessionMode, SessionStatus, SessionUsage, ChatEntry, SandboxMode } from "./types.ts";
 
 const AGENT_DIR = process.env.AGENT_ORCHESTRATOR_DIR ?? join(homedir(), ".agent-orchestrator");
 const DATA_DIR = join(AGENT_DIR, "jobs");
 mkdirSync(DATA_DIR, { recursive: true });
 
-const jobs = new Map<string, Job>();
+const sessions = new Map<string, Session>();
 
 // ── Event emitter ─────────────────────────────────────────────────────────────
 
 export type StoreEvent =
-  | { type: "job_created"; job: Job }
-  | { type: "job_status"; jobId: string; status: JobStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; sessionId: string | null; pendingTools: Job["pendingTools"]; archived: boolean; usage: JobUsage | null; title: string | null }
-  | { type: "log_entry"; jobId: string; entry: LogEntry; index: number };
+  | { type: "session_created"; job: Session }
+  | { type: "session_status"; jobId: string; status: SessionStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; plan: string | null; claudeSessionId: string | null; pendingTools: Session["pendingTools"]; archived: boolean; usage: SessionUsage | null; title: string | null }
+  | { type: "chat_entry"; jobId: string; entry: ChatEntry; index: number };
 
 const subscribers = new Set<(e: StoreEvent) => void>();
 
@@ -27,79 +27,87 @@ function emit(e: StoreEvent): void {
   subscribers.forEach(fn => fn(e));
 }
 
-function emitJobStatus(job: Job): void {
+function emitSessionStatus(session: Session): void {
   emit({
-    type: "job_status",
-    jobId: job.id,
-    status: job.status,
-    startedAt: job.startedAt,
-    finishedAt: job.finishedAt,
-    result: job.result,
-    error: job.error,
-    plan: job.plan,
-    sessionId: job.sessionId,
-    pendingTools: job.pendingTools,
-    archived: job.archived,
-    usage: job.usage,
-    title: job.title,
+    type: "session_status",
+    jobId: session.id,
+    status: session.status,
+    startedAt: session.startedAt,
+    finishedAt: session.finishedAt,
+    result: session.result,
+    error: session.error,
+    plan: session.plan,
+    claudeSessionId: session.claudeSessionId,
+    pendingTools: session.pendingTools,
+    archived: session.archived,
+    usage: session.usage,
+    title: session.title,
   });
 }
 
-function persistJob(job: Job): void {
-  writeFileSync(`${DATA_DIR}/${job.id}.json`, JSON.stringify(job, null, 2));
+function persistSession(session: Session): void {
+  writeFileSync(`${DATA_DIR}/${session.id}.json`, JSON.stringify(session, null, 2));
 }
 
-const TERMINAL_STATUSES = new Set<JobStatus>(["completed", "failed", "stopped"]);
+const TERMINAL_STATUSES = new Set<SessionStatus>(["completed", "failed", "stopped"]);
 
 export function loadStore(): void {
   for (const file of readdirSync(DATA_DIR)) {
     if (!file.endsWith(".json")) continue;
     try {
-      const job = JSON.parse(readFileSync(`${DATA_DIR}/${file}`, "utf8")) as Job;
+      const session = JSON.parse(readFileSync(`${DATA_DIR}/${file}`, "utf8")) as Session;
       // Migrate old single-pendingTool format to array
-      if (!Array.isArray(job.pendingTools)) {
-        job.pendingTools = [];
+      if (!Array.isArray(session.pendingTools)) {
+        session.pendingTools = [];
       }
-      // Migrate jobs created before worktree support
-      if (job.useWorktree === undefined) job.useWorktree = false;
-      if (job.worktreePath === undefined) job.worktreePath = null;
-      // Migrate jobs created before archive support
-      if (job.archived === undefined) job.archived = false;
-      // Migrate jobs created before usage tracking
-      if (job.usage === undefined) job.usage = null;
-      // Migrate jobs created before model/effort selection
-      if (job.model === undefined) job.model = null;
-      if (job.effort === undefined) job.effort = null;
-      // Migrate jobs created before title generation
-      if (job.title === undefined) job.title = null;
-      // Migrate jobs created before sandbox support
-      if ((job as any).sandbox === undefined) (job as any).sandbox = "approval";
-      jobs.set(job.id, job);
+      // Migrate sessions created before worktree support
+      if (session.useWorktree === undefined) session.useWorktree = false;
+      if (session.worktreePath === undefined) session.worktreePath = null;
+      // Migrate sessions created before archive support
+      if (session.archived === undefined) session.archived = false;
+      // Migrate sessions created before usage tracking
+      if (session.usage === undefined) session.usage = null;
+      // Migrate sessions created before model/effort selection
+      if (session.model === undefined) session.model = null;
+      if (session.effort === undefined) session.effort = null;
+      // Migrate sessions created before title generation
+      if (session.title === undefined) session.title = null;
+      // Migrate sessions created before sandbox support
+      if ((session as any).sandbox === undefined) (session as any).sandbox = "approval";
+      // Migrate log → chat field rename
+      if ((session as any).log !== undefined && (session as any).chat === undefined) {
+        (session as any).chat = (session as any).log;
+      }
+      // Migrate sessionId → claudeSessionId field rename
+      if ((session as any).sessionId !== undefined && (session as any).claudeSessionId === undefined) {
+        (session as any).claudeSessionId = (session as any).sessionId;
+      }
+      sessions.set(session.id, session);
     } catch {
       // skip corrupt files
     }
   }
 
-  // Stop any jobs that were in-progress when the server last shut down.
+  // Stop any sessions that were in-progress when the server last shut down.
   // Their AbortControllers and SDK streams are gone; mark them stopped so
   // the user can resume via the follow-up bar.
   const restartTs = new Date().toISOString();
-  for (const [, job] of jobs) {
-    if (TERMINAL_STATUSES.has(job.status)) continue;
-    job.status = "stopped";
-    job.finishedAt = restartTs;
-    job.pendingTools = [];
-    job.log.push({
+  for (const [, session] of sessions) {
+    if (TERMINAL_STATUSES.has(session.status)) continue;
+    session.status = "stopped";
+    session.finishedAt = restartTs;
+    session.pendingTools = [];
+    session.chat.push({
       type: "text",
-      text: "Server restarted — job was stopped. Use the follow-up bar to resume.",
+      text: "Server restarted — session was stopped. Use the follow-up bar to resume.",
       ts: restartTs,
     });
-    persistJob(job);
+    persistSession(session);
   }
 }
 
-export function createJob(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: JobMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: JobEffort | null = null, sandbox: SandboxMode = "none"): Job {
-  const job: Job = {
+export function createSession(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: SessionMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: SessionEffort | null = null, sandbox: SandboxMode = "none"): Session {
+  const session: Session = {
     id,
     status: "pending",
     mode,
@@ -114,9 +122,9 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     createdAt: new Date().toISOString(),
     startedAt: null,
     finishedAt: null,
-    log: [],
+    chat: [],
     plan: null,
-    sessionId: null,
+    claudeSessionId: null,
     result: null,
     error: null,
     images,
@@ -125,159 +133,159 @@ export function createJob(id: string, prompt: string, tools: string[], cwd: stri
     sandbox,
     usage: null,
   };
-  jobs.set(id, job);
-  persistJob(job);
-  emit({ type: "job_created", job });
-  return job;
+  sessions.set(id, session);
+  persistSession(session);
+  emit({ type: "session_created", job: session });
+  return session;
 }
 
-export function getJob(id: string): Job | undefined {
-  return jobs.get(id);
+export function getSession(id: string): Session | undefined {
+  return sessions.get(id);
 }
 
-function getJobOrWarn(id: string, caller: string): Job | undefined {
-  const job = jobs.get(id);
-  if (!job) console.warn(`[store] ${caller}: job not found: ${id}`);
-  return job;
+function getSessionOrWarn(id: string, caller: string): Session | undefined {
+  const session = sessions.get(id);
+  if (!session) console.warn(`[store] ${caller}: session not found: ${id}`);
+  return session;
 }
 
-export function setStatus(id: string, status: JobStatus): void {
-  const job = getJobOrWarn(id, "setStatus");
-  if (!job) return;
-  job.status = status;
-  if (status === "running") job.startedAt = new Date().toISOString();
-  if (status === "completed" || status === "failed" || status === "stopped") job.finishedAt = new Date().toISOString();
-  persistJob(job);
-  emitJobStatus(job);
+export function setStatus(id: string, status: SessionStatus): void {
+  const session = getSessionOrWarn(id, "setStatus");
+  if (!session) return;
+  session.status = status;
+  if (status === "running") session.startedAt = new Date().toISOString();
+  if (status === "completed" || status === "failed" || status === "stopped") session.finishedAt = new Date().toISOString();
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
-export function appendLog(id: string, entry: LogEntry): void {
-  const job = getJobOrWarn(id, "appendLog");
-  if (!job) return;
-  job.log.push(entry);
-  persistJob(job);
-  emit({ type: "log_entry", jobId: id, entry, index: job.log.length - 1 });
+export function appendChat(id: string, entry: ChatEntry): void {
+  const session = getSessionOrWarn(id, "appendChat");
+  if (!session) return;
+  session.chat.push(entry);
+  persistSession(session);
+  emit({ type: "chat_entry", jobId: id, entry, index: session.chat.length - 1 });
 }
 
-export function patchLog(id: string, index: number, patch: Record<string, unknown>): void {
-  const job = getJobOrWarn(id, "patchLog");
-  if (!job) return;
-  const entry = job.log[index];
+export function patchChat(id: string, index: number, patch: Record<string, unknown>): void {
+  const session = getSessionOrWarn(id, "patchChat");
+  if (!session) return;
+  const entry = session.chat[index];
   if (!entry) return;
   Object.assign(entry, patch);
-  persistJob(job);
-  emit({ type: "log_entry", jobId: id, entry: { ...entry } as LogEntry, index });
+  persistSession(session);
+  emit({ type: "chat_entry", jobId: id, entry: { ...entry } as ChatEntry, index });
 }
 
 export function setPlan(id: string, plan: string): void {
-  const job = getJobOrWarn(id, "setPlan");
-  if (!job) return;
-  job.plan = plan;
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "setPlan");
+  if (!session) return;
+  session.plan = plan;
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
-export function setSessionId(id: string, sessionId: string): void {
-  const job = getJobOrWarn(id, "setSessionId");
-  if (!job) return;
-  job.sessionId = sessionId;
-  persistJob(job);
+export function setClaudeSessionId(id: string, claudeSessionId: string): void {
+  const session = getSessionOrWarn(id, "setClaudeSessionId");
+  if (!session) return;
+  session.claudeSessionId = claudeSessionId;
+  persistSession(session);
 }
 
 export function setTitle(id: string, title: string): void {
-  const job = getJobOrWarn(id, "setTitle");
-  if (!job) return;
-  job.title = title;
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "setTitle");
+  if (!session) return;
+  session.title = title;
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
 export function setModel(id: string, model: string): void {
-  const job = getJobOrWarn(id, "setModel");
-  if (!job) return;
-  job.model = model;
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "setModel");
+  if (!session) return;
+  session.model = model;
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
 export function setWorktreePath(id: string, worktreePath: string): void {
-  const job = getJobOrWarn(id, "setWorktreePath");
-  if (!job) return;
-  job.worktreePath = worktreePath;
-  persistJob(job);
+  const session = getSessionOrWarn(id, "setWorktreePath");
+  if (!session) return;
+  session.worktreePath = worktreePath;
+  persistSession(session);
 }
 
 export function setResult(id: string, result: string): void {
-  const job = getJobOrWarn(id, "setResult");
-  if (!job) return;
-  job.result = result;
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "setResult");
+  if (!session) return;
+  session.result = result;
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
 export function setError(id: string, error: string): void {
-  const job = getJobOrWarn(id, "setError");
-  if (!job) return;
-  job.error = error;
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "setError");
+  if (!session) return;
+  session.error = error;
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
 export function addPendingTool(id: string, toolUseID: string, name: string, input: Record<string, unknown>, agentID?: string): void {
-  const job = getJobOrWarn(id, "addPendingTool");
-  if (!job) return;
-  job.pendingTools.push({ toolUseID, name, input, agentID });
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "addPendingTool");
+  if (!session) return;
+  session.pendingTools.push({ toolUseID, name, input, agentID });
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
 export function removePendingTool(id: string, toolUseID: string): void {
-  const job = getJobOrWarn(id, "removePendingTool");
-  if (!job) return;
-  job.pendingTools = job.pendingTools.filter(t => t.toolUseID !== toolUseID);
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "removePendingTool");
+  if (!session) return;
+  session.pendingTools = session.pendingTools.filter(t => t.toolUseID !== toolUseID);
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
 export function clearResult(id: string): void {
-  const job = getJobOrWarn(id, "clearResult");
-  if (!job) return;
-  job.result = null;
-  job.error = null;
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "clearResult");
+  if (!session) return;
+  session.result = null;
+  session.error = null;
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
 export function setArchived(id: string, archived: boolean): void {
-  const job = getJobOrWarn(id, "setArchived");
-  if (!job) return;
-  job.archived = archived;
-  persistJob(job);
-  emitJobStatus(job);
+  const session = getSessionOrWarn(id, "setArchived");
+  if (!session) return;
+  session.archived = archived;
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
-export function addUsage(id: string, delta: JobUsage): void {
-  const job = getJobOrWarn(id, "addUsage");
-  if (!job) return;
-  if (job.usage === null) {
-    job.usage = { totalTokens: delta.totalTokens, costUSD: delta.costUSD };
+export function addUsage(id: string, delta: SessionUsage): void {
+  const session = getSessionOrWarn(id, "addUsage");
+  if (!session) return;
+  if (session.usage === null) {
+    session.usage = { totalTokens: delta.totalTokens, costUSD: delta.costUSD };
   } else {
-    job.usage.totalTokens += delta.totalTokens;
-    job.usage.costUSD += delta.costUSD;
+    session.usage.totalTokens += delta.totalTokens;
+    session.usage.costUSD += delta.costUSD;
   }
-  persistJob(job);
-  emitJobStatus(job);
+  persistSession(session);
+  emitSessionStatus(session);
 }
 
-function getLatestUserMessageTime(job: Job): number {
-  const times = job.log
+function getLatestUserMessageTime(session: Session): number {
+  const times = session.chat
     .filter(e => e.type === "user")
     .map(e => new Date(e.ts).getTime());
-  return Math.max(new Date(job.createdAt).getTime(), ...times);
+  return Math.max(new Date(session.createdAt).getTime(), ...times);
 }
 
-export function listJobs(): Job[] {
-  return Array.from(jobs.values()).sort(
+export function listSessions(): Session[] {
+  return Array.from(sessions.values()).sort(
     (a, b) => getLatestUserMessageTime(b) - getLatestUserMessageTime(a)
   );
 }
