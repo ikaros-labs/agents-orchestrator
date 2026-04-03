@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ALLOWED_MEDIA_TYPES } from "./jobs.ts";
+import { ALLOWED_MEDIA_TYPES } from "./sessions.ts";
 
 export const DEFAULTS = {
   model: "claude-sonnet-4-6",
@@ -15,7 +15,7 @@ export const RawImageSchema = z.object({
   data: z.string().min(1, "data must be a non-empty base64 string"),
 });
 
-export const CreateJobSchema = z.object({
+export const CreateSessionSchema = z.object({
   prompt: z.string().trim().min(1, "prompt must be a non-empty string"),
   cwd: z.string().optional(),
   useWorktree: z.boolean().optional().default(true),
@@ -39,7 +39,7 @@ export const AnswerQuestionSchema = z.object({
   answers: z.record(z.string()),
 });
 
-export const ApproveJobSchema = z.object({
+export const ApproveSessionSchema = z.object({
   model: z.string().optional(),
 });
 

@@ -5,12 +5,12 @@ import { basename, extname, join } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
 import * as store from "./store.ts";
-import type { JobEffort, SandboxMode } from "./types.ts";
+import type { SessionEffort, SandboxMode } from "./types.ts";
 import { jobStderr, makeStderrCapturingSpawner, makeDockerSpawner } from "./spawners.ts";
 import { resolveEffectiveCwd } from "./worktree.ts";
 
-// ── Active job AbortControllers ──────────────────────────────────────────────
-// One AbortController per running job. Used by stopJob() to cancel the SDK query.
+// ── Active session AbortControllers ──────────────────────────────────────────
+// One AbortController per running session. Used by stopSession() to cancel the SDK query.
 
 const activeControllers = new Map<string, AbortController>();
 
@@ -59,7 +59,7 @@ const EXT_TO_MIME: Record<string, string> = {
   mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
 };
 
-function makeAttachFilesServer(jobId: string) {
+function makeAttachFilesServer(sessionId: string) {
   return createSdkMcpServer({
     name: "orchestrator",
     tools: [
@@ -73,10 +73,10 @@ Use the returned URLs in your markdown response — inline images with ![alt](ur
           for (const filePath of paths) {
             const ext = extname(filePath).slice(1).toLowerCase();
             const filename = `${crypto.randomUUID()}.${ext || "bin"}`;
-            const dir = `${IMAGES_DIR}/${jobId}`;
+            const dir = `${IMAGES_DIR}/${sessionId}`;
             await mkdir(dir, { recursive: true });
             await writeFile(`${dir}/${filename}`, await readFile(filePath));
-            results.push(`${basename(filePath)}: /images/${jobId}/${filename}`);
+            results.push(`${basename(filePath)}: /images/${sessionId}/${filename}`);
           }
           return { content: [{ type: "text" as const, text: results.join("\n") }] };
         }
@@ -127,7 +127,7 @@ function buildQueryOptions(
   tools: string[],
   cwd: string | null,
   inWorktree: boolean,
-  opts: { sessionId?: string; model?: string | null; effort?: JobEffort | null; abortController: AbortController },
+  opts: { claudeSessionId?: string; model?: string | null; effort?: SessionEffort | null; abortController: AbortController },
 ): Record<string, any> {
   const allTools = [...new Set([...tools, ...ALL_SDK_TOOLS, "mcp__orchestrator__attach_files"])];
   const base = {
@@ -136,7 +136,7 @@ function buildQueryOptions(
     mcpServers: { orchestrator: makeAttachFilesServer(id) },
     abortController: opts.abortController,
     spawnClaudeCodeProcess: makeStderrCapturingSpawner(id),
-    ...(opts.sessionId ? { resume: opts.sessionId } : {}),
+    ...(opts.claudeSessionId ? { resume: opts.claudeSessionId } : {}),
     ...(opts.model ? { model: opts.model } : {}),
     ...(opts.effort ? { effort: opts.effort } : {}),
     ...worktreeSystemPrompt(inWorktree),
@@ -177,14 +177,14 @@ function buildQueryOptions(
 
 // ── Tool approval map ────────────────────────────────────────────────────────
 // When Claude wants to use a tool during execution, canUseTool stores a
-// Promise resolver here keyed by job ID, then by toolUseID. This supports
+// Promise resolver here keyed by session ID, then by toolUseID. This supports
 // parallel tool calls (e.g. from subagents) where multiple approvals can be
 // in-flight simultaneously. The approve/reject endpoints resolve each by
 // toolUseID, unblocking the specific agent call that was waiting.
 
 const pendingToolApprovals = new Map<string, Map<string, { resolve: (d: PermissionResult) => void }>>();
 
-/** Returns true if a pending resolver exists for this job + toolUseID. */
+/** Returns true if a pending resolver exists for this session + toolUseID. */
 export function hasPendingApproval(id: string, toolUseID: string): boolean {
   return pendingToolApprovals.get(id)?.has(toolUseID) ?? false;
 }
@@ -194,26 +194,26 @@ export function hasPendingApproval(id: string, toolUseID: string): boolean {
  * was found, true on success.
  */
 export function resolveToolApproval(id: string, toolUseID: string, result: PermissionResult): boolean {
-  const jobApprovals = pendingToolApprovals.get(id);
-  const pending = jobApprovals?.get(toolUseID);
+  const sessionApprovals = pendingToolApprovals.get(id);
+  const pending = sessionApprovals?.get(toolUseID);
   if (!pending) return false;
-  jobApprovals!.delete(toolUseID);
-  if (jobApprovals!.size === 0) pendingToolApprovals.delete(id);
+  sessionApprovals!.delete(toolUseID);
+  if (sessionApprovals!.size === 0) pendingToolApprovals.delete(id);
   pending.resolve(result);
   return true;
 }
 
 /**
- * Stops a running job: aborts its SDK query, rejects any pending tool approvals,
- * and marks the job as stopped. Safe to call from any active status.
+ * Stops a running session: aborts its SDK query, rejects any pending tool approvals,
+ * and marks the session as stopped. Safe to call from any active status.
  */
-export function stopJob(id: string): boolean {
-  const jobApprovals = pendingToolApprovals.get(id);
+export function stopSession(id: string): boolean {
+  const sessionApprovals = pendingToolApprovals.get(id);
   const controller = activeControllers.get(id);
-  if (!controller && !jobApprovals?.size) return false;
+  if (!controller && !sessionApprovals?.size) return false;
 
-  if (jobApprovals) {
-    jobApprovals.clear();
+  if (sessionApprovals) {
+    sessionApprovals.clear();
     pendingToolApprovals.delete(id);
   }
 
@@ -234,7 +234,7 @@ function makeCanUseTool(id: string): CanUseTool {
     const { toolUseID, agentID } = options;
 
     // Deny ExitPlanMode so the planning query ends cleanly here.
-    // Execution is triggered separately via executeJob() once the user approves the plan.
+    // Execution is triggered separately via executeSession() once the user approves the plan.
     if (toolName === "ExitPlanMode") {
       return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
     }
@@ -247,8 +247,8 @@ function makeCanUseTool(id: string): CanUseTool {
     store.addPendingTool(id, toolUseID, toolName, input, agentID);
     console.log(`[canUseTool] id=${id} tool=${toolName} toolUseID=${toolUseID} → awaiting approval`);
 
-    const job = store.getJob(id);
-    if (job && job.status !== "awaiting_tool_approval" && job.status !== "awaiting_user_question") {
+    const session = store.getSession(id);
+    if (session && session.status !== "awaiting_tool_approval" && session.status !== "awaiting_user_question") {
       store.setStatus(id, toolName === "AskUserQuestion" ? "awaiting_user_question" : "awaiting_tool_approval");
     }
 
@@ -261,7 +261,7 @@ function makeCanUseTool(id: string): CanUseTool {
   };
 }
 
-function handleJobError(id: string, err: unknown): void {
+function handleSessionError(id: string, err: unknown): void {
   let message = err instanceof Error ? err.message : String(err);
   // Append captured stderr if available — often contains the real reason for crashes
   const stderr = jobStderr.get(id);
@@ -274,20 +274,20 @@ function handleJobError(id: string, err: unknown): void {
 }
 
 /** Save base64 image data to disk and return the server-relative URL. */
-async function saveImage(jobId: string, index: number, mediaType: string, base64Data: string): Promise<string> {
+async function saveImage(sessionId: string, index: number, mediaType: string, base64Data: string): Promise<string> {
   const ext = MEDIA_TYPE_EXT[mediaType] ?? "bin";
-  const dir = `${IMAGES_DIR}/${jobId}`;
+  const dir = `${IMAGES_DIR}/${sessionId}`;
   await mkdir(dir, { recursive: true });
   const filename = `${index}.${ext}`;
   await writeFile(`${dir}/${filename}`, Buffer.from(base64Data, "base64"));
-  return `/images/${jobId}/${filename}`;
+  return `/images/${sessionId}/${filename}`;
 }
 
 /**
  * Drives the `for await` loop over a query stream, handling NDJSON logging,
- * content block processing, and sessionId capture in one place.
- * - `collectPlanText`: if true, text blocks are accumulated and returned (used by plan/revise jobs)
- * - `captureResult`: if true, store.setResult is called on result messages (used by execute jobs)
+ * content block processing, and claudeSessionId capture in one place.
+ * - `collectPlanText`: if true, text blocks are accumulated and returned (used by plan/revise sessions)
+ * - `captureResult`: if true, store.setResult is called on result messages (used by execute sessions)
  */
 async function runQueryStream(
   id: string,
@@ -296,7 +296,7 @@ async function runQueryStream(
   opts: { collectPlanText?: boolean; captureResult?: boolean } = {}
 ): Promise<string[]> {
   const planTexts: string[] = [];
-  // Maps tool_use_id → log entry index so we can patch with output later
+  // Maps tool_use_id → chat entry index so we can patch with output later
   const toolCallIndices = new Map<string, number>();
   for await (const message of stream) {
     const ts = new Date().toISOString();
@@ -304,20 +304,20 @@ async function runQueryStream(
     if (message.type === "assistant" && message.message?.content) {
       for (const block of message.message.content) {
         if ("text" in block) {
-          store.appendLog(id, { type: "text", text: block.text, ts });
+          store.appendChat(id, { type: "text", text: block.text, ts });
           if (opts.collectPlanText) planTexts.push(block.text);
         } else if ("name" in block) {
           const toolUseId: string | undefined = (block as any).id;
-          store.appendLog(id, { type: "tool_call", name: block.name, input: (block as any).input, toolUseId, ts });
+          store.appendChat(id, { type: "tool_call", name: block.name, input: (block as any).input, toolUseId, ts });
           if (toolUseId) {
-            const job = store.getJob(id);
-            if (job) toolCallIndices.set(toolUseId, job.log.length - 1);
+            const session = store.getSession(id);
+            if (session) toolCallIndices.set(toolUseId, session.chat.length - 1);
           }
         } else if ((block as any).type === "image") {
           const b = block as any;
           if (b.source?.type === "base64") {
             const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
-            store.appendLog(id, { type: "image", mediaType: b.source.media_type, url, ts });
+            store.appendChat(id, { type: "image", mediaType: b.source.media_type, url, ts });
           }
         }
       }
@@ -330,13 +330,13 @@ async function runQueryStream(
             const raw = (block as any).content;
             const output = typeof raw === "string" ? raw
               : Array.isArray(raw) ? raw.map((c: any) => c.text ?? "").join("") : "";
-            store.patchLog(id, index, { output });
+            store.patchChat(id, index, { output });
           }
         }
       }
     } else if (message.type === "system" && message.subtype === "init") {
-      const sessionId = message.session_id ?? message.sessionId;
-      if (sessionId) store.setSessionId(id, sessionId);
+      const claudeSessionId = message.session_id ?? message.sessionId;
+      if (claudeSessionId) store.setClaudeSessionId(id, claudeSessionId);
     } else if (message.type === "result") {
       if (opts.captureResult) store.setResult(id, message.subtype);
       const u = message.usage;
@@ -352,11 +352,11 @@ async function runQueryStream(
 }
 
 /** Build a multimodal prompt iterable when files are provided; otherwise fall back to a plain string. */
-async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string): AsyncIterable<any> {
+async function* makePrompt(prompt: string, rawImages: RawImage[], sessionId: string): AsyncIterable<any> {
   // Save files to disk and build content blocks (image or document depending on type)
   const contentBlocks = await Promise.all(
     rawImages.map(async (img, i) => {
-      await saveImage(jobId, i, img.mediaType, img.data);
+      await saveImage(sessionId, i, img.mediaType, img.data);
       if (IMAGE_MEDIA_TYPES.has(img.mediaType)) {
         return {
           type: "image" as const,
@@ -391,10 +391,10 @@ async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string)
   };
 }
 
-// ── Job runner lifecycle ──────────────────────────────────────────────────────
+// ── Session runner lifecycle ──────────────────────────────────────────────────
 
 /**
- * Shared wrapper for all job runners. Creates an AbortController, registers it,
+ * Shared wrapper for all session runners. Creates an AbortController, registers it,
  * and handles abort detection, error handling, and cleanup in one place.
  */
 async function runWithController(
@@ -408,21 +408,21 @@ async function runWithController(
     if (controller.signal.aborted) return;
   } catch (err) {
     if (controller.signal.aborted) return;
-    handleJobError(id, err);
+    handleSessionError(id, err);
   } finally {
     activeControllers.delete(id);
     jobStderr.delete(id);
   }
 }
 
-// ── Job runners (exported) ───────────────────────────────────────────────────
+// ── Session runners (exported) ───────────────────────────────────────────────
 
-export async function planJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
-  console.log(`[planJob] id=${id}`);
+export async function planSession(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
+  console.log(`[planSession] id=${id}`);
   store.setStatus(id, "planning");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  const job = store.getJob(id);
+  const session = store.getSession(id);
   await runWithController(id, async (controller) => {
     // Planning phase always uses "plan" mode regardless of sandbox setting
     const stream = query({
@@ -434,26 +434,26 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
         settingSources: ["user", "project", "local"],
         mcpServers: { orchestrator: makeAttachFilesServer(id) },
         abortController: controller,
-        ...(job?.model ? { model: job.model } : {}),
-        ...(job?.effort ? { effort: job.effort } : {}),
+        ...(session?.model ? { model: session.model } : {}),
+        ...(session?.effort ? { effort: session.effort } : {}),
         ...worktreeSystemPrompt(useWorktree),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
       },
     });
     const planTexts = await runQueryStream(id, stream, rawImages.length, { collectPlanText: true });
     if (controller.signal.aborted) return;
-    const exitEntry = store.getJob(id)?.log.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
+    const exitEntry = store.getSession(id)?.chat.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
     store.setPlan(id, (exitEntry as any)?.input?.plan || planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   });
 }
 
-export async function revisePlanJob(id: string, feedback: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
-  console.log(`[revisePlanJob] id=${id}`);
+export async function revisePlanSession(id: string, feedback: string, claudeSessionId: string, tools: string[], cwd: string | null): Promise<void> {
+  console.log(`[revisePlanSession] id=${id}`);
   store.setStatus(id, "planning");
-  store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
-  const job = store.getJob(id);
-  const inWorktree = !!job?.worktreePath;
+  store.appendChat(id, { type: "user", text: feedback, ts: new Date().toISOString() });
+  const session = store.getSession(id);
+  const inWorktree = !!session?.worktreePath;
   await runWithController(id, async (controller) => {
     // Planning phase always uses "plan" mode regardless of sandbox setting
     const stream = query({
@@ -464,35 +464,35 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
         canUseTool: makeCanUseTool(id),
         settingSources: ["user", "project", "local"],
         mcpServers: { orchestrator: makeAttachFilesServer(id) },
-        resume: sessionId,
+        resume: claudeSessionId,
         abortController: controller,
-        ...(job?.model ? { model: job.model } : {}),
-        ...(job?.effort ? { effort: job.effort } : {}),
+        ...(session?.model ? { model: session.model } : {}),
+        ...(session?.effort ? { effort: session.effort } : {}),
         ...worktreeSystemPrompt(inWorktree),
         ...(cwd ? { cwd } : {}),
       },
     });
     const planTexts = await runQueryStream(id, stream, 0, { collectPlanText: true });
     if (controller.signal.aborted) return;
-    const exitEntry = store.getJob(id)?.log.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
+    const exitEntry = store.getSession(id)?.chat.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
     store.setPlan(id, (exitEntry as any)?.input?.plan || planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
   });
 }
 
-export async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
-  console.log(`[directExecuteJob] id=${id}`);
+export async function directExecuteSession(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
+  console.log(`[directExecuteSession] id=${id}`);
   store.setStatus(id, "running");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
-  const job = store.getJob(id);
-  const sandbox = job?.sandbox ?? "none";
-  const inWorktree = !!job?.worktreePath;
+  const session = store.getSession(id);
+  const sandbox = session?.sandbox ?? "none";
+  const inWorktree = !!session?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: promptArg as any,
       options: buildQueryOptions(id, sandbox, tools, effectiveCwd, inWorktree, {
-        model: job?.model, effort: job?.effort, abortController: controller,
+        model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
@@ -501,17 +501,17 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
   });
 }
 
-export async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
-  console.log(`[executeJob] id=${id}`);
+export async function executeSession(id: string, claudeSessionId: string, tools: string[], cwd: string | null): Promise<void> {
+  console.log(`[executeSession] id=${id}`);
   store.setStatus(id, "running");
-  const job = store.getJob(id);
-  const sandbox = job?.sandbox ?? "none";
-  const inWorktree = !!job?.worktreePath;
+  const session = store.getSession(id);
+  const sandbox = session?.sandbox ?? "none";
+  const inWorktree = !!session?.worktreePath;
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
       options: buildQueryOptions(id, sandbox, tools, cwd, inWorktree, {
-        sessionId, model: job?.model, effort: job?.effort, abortController: controller,
+        claudeSessionId, model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
@@ -520,29 +520,29 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
   });
 }
 
-export async function followUpJob(id: string, prompt: string, sessionId: string | null, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
-  console.log(`[followUpJob] id=${id}`);
+export async function followUpSession(id: string, prompt: string, claudeSessionId: string | null, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+  console.log(`[followUpSession] id=${id}`);
   store.setStatus(id, "running");
   store.clearResult(id);
-  store.appendLog(id, { type: "user", text: prompt, ts: new Date().toISOString() });
-  const followupJobId = `${id}-followup-${Date.now()}`;
+  store.appendChat(id, { type: "user", text: prompt, ts: new Date().toISOString() });
+  const followupId = `${id}-followup-${Date.now()}`;
   if (rawImages.length > 0) {
-    const urls = await Promise.all(rawImages.map((img, i) => saveImage(followupJobId, i, img.mediaType, img.data)));
+    const urls = await Promise.all(rawImages.map((img, i) => saveImage(followupId, i, img.mediaType, img.data)));
     for (let i = 0; i < rawImages.length; i++) {
-      store.appendLog(id, { type: "image", mediaType: rawImages[i].mediaType, url: urls[i], ts: new Date().toISOString() });
+      store.appendChat(id, { type: "image", mediaType: rawImages[i].mediaType, url: urls[i], ts: new Date().toISOString() });
     }
   }
   const promptArg = rawImages.length > 0
-    ? makePrompt(prompt, rawImages, followupJobId)
+    ? makePrompt(prompt, rawImages, followupId)
     : prompt;
-  const job = store.getJob(id);
-  const sandbox = job?.sandbox ?? "none";
-  const inWorktree = !!job?.worktreePath;
+  const session = store.getSession(id);
+  const sandbox = session?.sandbox ?? "none";
+  const inWorktree = !!session?.worktreePath;
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: promptArg as any,
       options: buildQueryOptions(id, sandbox, tools, cwd, inWorktree, {
-        sessionId: sessionId ?? undefined, model: job?.model, effort: job?.effort, abortController: controller,
+        claudeSessionId: claudeSessionId ?? undefined, model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });
     await runQueryStream(id, stream, 0, { captureResult: true });

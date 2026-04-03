@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import * as store from "./store.ts";
-import type { Job } from "./types.ts";
+import type { Session } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,7 +32,7 @@ async function createWorktree(cwd: string, jobId: string): Promise<string> {
  * Removes the git worktree for a job.
  * Errors are logged but not thrown — archiving must always succeed.
  */
-export async function removeWorktree(job: Job): Promise<void> {
+export async function removeWorktree(job: Session): Promise<void> {
   if (!job.worktreePath) return;
   const { id, worktreePath } = job;
   try {
