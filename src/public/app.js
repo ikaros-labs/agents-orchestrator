@@ -359,7 +359,7 @@ function renderQuestionBar(job) {
     const otherHtml = `<label class="question-option-other">
       <input type="${inputType}" name="${name}" value="__other__" ${otherChecked}>
       <span class="question-option-other-label">Other:</span>
-      <input type="text" id="${name}_other" placeholder="Type a custom answer…" value="${escHtml(otherText)}">
+      <input type="text" id="${name}_other" placeholder="Type a custom answer…" value="${escHtml(otherText)}" oninput="selectOtherRadio('${name}')">
     </label>`;
 
     return `<div class="question-item">
@@ -415,6 +415,11 @@ function _snapshotQuestionAnswers(job) {
       }
     }
   });
+}
+
+function selectOtherRadio(name) {
+  const el = document.querySelector(`[name="${name}"][value="__other__"]`);
+  if (el) el.checked = true;
 }
 
 async function answerQuestion(id) {
