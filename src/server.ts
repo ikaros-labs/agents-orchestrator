@@ -146,9 +146,9 @@ Bun.serve({
       if (req.method === "POST") {
         const parsed = await parseBody(req, CreateJobSchema);
         if (parsed instanceof Response) return parsed;
-        const { prompt, tools: rawTools, cwd = null, useWorktree, images: rawImages, mode, model, effort, sandbox } = parsed.data;
+        const { prompt, cwd = null, useWorktree, images: rawImages, mode, model, effort, sandbox } = parsed.data;
 
-        const tools = rawTools ?? jobs.DEFAULT_TOOLS;
+        const tools = jobs.DEFAULT_TOOLS;
         const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
 
         // Build InputFile refs (filenames will be <index>.<ext>)
