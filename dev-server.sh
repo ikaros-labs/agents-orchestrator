@@ -27,7 +27,7 @@ PORT=$((RANDOM + 3100))
 mkdir -p /tmp/agents-orchestrator
 LOG_FILE=$(mktemp /tmp/agents-orchestrator/dev-server-XXXXXX.log)
 
-HOST=100.81.181.2 PORT=$PORT AGENT_ORCHESTRATOR_DIR=/tmp/agents-orchestrator/dev-$PORT \
+HOST=100.81.181.2 PORT=$PORT AGENT_ORCHESTRATOR_DIR=/root/.dev-agents-orchestrator \
   timeout 4h bun --env-file=/root/agents-orchestrator/.env run dev > "$LOG_FILE" 2>&1 &
 PID=$!
 echo "$PID" > "$PID_FILE"
