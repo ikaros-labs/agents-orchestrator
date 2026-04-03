@@ -373,10 +373,6 @@ function renderQuestionBar(job) {
   }).join('<hr class="question-divider">');
 
   return `<div class="question-bar">
-    <div class="question-bar-header">
-      <span class="question-bar-label">Clarifying questions</span>
-      <span class="question-bar-title">Claude needs your input to continue</span>
-    </div>
     ${questionsHtml}
     <div class="question-bar-actions">
       <button class="btn-answer" id="answer-btn-${id}" onclick="answerQuestion('${id}')">Submit Answers</button>
@@ -474,16 +470,12 @@ async function answerQuestion(id) {
 // ── renderDetail sub-functions ──────────────────────────────────────────────
 
 function renderPlanCard(job) {
-  if (job.status !== 'awaiting_approval' || !job.plan) return '';
-  return `<div class="plan-card">
-    <div class="plan-card-header">Plan</div>
-    <div class="plan-card-body markdown-body">${md(job.plan)}</div>
-  </div>`;
+  if (!job.plan) return '';
+  return `<div class="chat-plan"><span class="chat-plan-label">Plan</span><div class="markdown-body">${md(job.plan)}</div></div>`;
 }
 
 function renderResultBox(job) {
-  if (job.result) return `<div class="result-box result-success markdown-body">${md(job.result)}</div>`;
-  if (job.error) return `<div class="result-box result-error">${escHtml(job.error)}</div>`;
+  if (job.error) return `<div class="chat-error"><span class="chat-error-label">Error</span>${escHtml(job.error)}</div>`;
   return '';
 }
 
@@ -666,15 +658,24 @@ function renderDetail(job) {
   const scrollState = captureScrollState();
   const inputState = captureInputState(job.id);
 
+  const cwd = job.worktreePath ?? job.cwd;
+  const exitPlanIdx = job.plan
+    ? job.chat.findIndex(e => e.type === 'tool_call' && e.name === 'ExitPlanMode')
+    : -1;
+  const chatHtml = job.chat.map((e, i) => {
+    const html = renderChatEntry(e, cwd);
+    return i === exitPlanIdx ? html + renderPlanCard(job) : html;
+  }).join('');
+
   const feedHtml = `<div class="chat-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`
-    + job.chat.map(e => renderChatEntry(e, job.worktreePath ?? job.cwd)).join('');
+    + chatHtml
+    + (exitPlanIdx === -1 ? renderPlanCard(job) : '')
+    + renderResultBox(job)
+    + renderQuestionBar(job);
 
   document.getElementById('detail').innerHTML = `
     ${renderDetailHeader(job)}
     <div class="chat-feed" id="chat-feed">${feedHtml}</div>
-    ${renderPlanCard(job)}
-    ${renderResultBox(job)}
-    ${renderQuestionBar(job)}
     ${renderApproveBar(job)}
     ${renderToolApprovalBar(job)}
     ${renderFollowUpBar(job)}
