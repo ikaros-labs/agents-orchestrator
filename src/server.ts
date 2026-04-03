@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as store from "./store.ts";
 import * as jobs from "./jobs.ts";
 import { generateTitle } from "./title.ts";
-import { CreateJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
+import { CreateJobSchema, ApproveJobSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
 import type { JobMode, SandboxMode } from "./types.ts";
 
 const sseEncoder = new TextEncoder();
@@ -182,12 +182,16 @@ Bun.serve({
 
     // ── Plan approval lifecycle ────────────────────────────────────────────
 
-    "/jobs/:id/approve": (req) => {
+    "/jobs/:id/approve": async (req) => {
       const { id } = req.params;
       const job = store.getJob(id);
       if (!job) return jsonError(404, "Job not found");
       if (job.status !== "awaiting_approval") return jsonError(409, "Job is not awaiting approval");
       if (!job.sessionId) return jsonError(500, "No session ID from planning phase");
+      const parsed = await parseBody(req, ApproveJobSchema);
+      if (!(parsed instanceof Response) && parsed.data.model) {
+        store.setModel(id, parsed.data.model);
+      }
       Promise.resolve().then(() => jobs.executeJob(id, job.sessionId!, job.tools, job.worktreePath ?? job.cwd));
       return Response.json({ id, status: "running" }, { status: 202 });
     },

@@ -33,6 +33,10 @@ export const AnswerQuestionSchema = z.object({
   answers: z.record(z.string()),
 });
 
+export const ApproveJobSchema = z.object({
+  model: z.string().optional(),
+});
+
 export const FollowUpSchema = z.object({
   prompt: z.string().trim().min(1, "prompt must be a non-empty string"),
   images: z.array(RawImageSchema).default([]),

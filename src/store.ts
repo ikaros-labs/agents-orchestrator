@@ -185,6 +185,14 @@ export function setTitle(id: string, title: string): void {
   emitJobStatus(job);
 }
 
+export function setModel(id: string, model: string): void {
+  const job = jobs.get(id);
+  if (!job) { console.warn(`[store] setModel: job not found: ${id}`); return; }
+  job.model = model;
+  persistJob(job);
+  emitJobStatus(job);
+}
+
 export function setWorktreePath(id: string, worktreePath: string): void {
   const job = jobs.get(id);
   if (!job) { console.warn(`[store] setWorktreePath: job not found: ${id}`); return; }

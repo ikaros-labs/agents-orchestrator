@@ -131,6 +131,8 @@ details.log-tool-bash[open] > summary { border-bottom-left-radius: 0; border-bot
 .btn-answer:disabled { background: #1e293b; color: #475569; cursor: default; }
 
 .approve-bar { display: flex; flex-direction: column; gap: 10px; padding: 12px 20px; border-top: 1px solid #2a2a2a; flex-shrink: 0; }
+.approve-model-row { display: flex; align-items: center; gap: 10px; }
+.approve-model-label { font-size: 12px; color: #64748b; white-space: nowrap; }
 .approve-actions { display: flex; gap: 10px; }
 .btn-approve { background: #166534; color: #4ade80; border: 1px solid #166534; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-approve:hover { background: #15803d; }
