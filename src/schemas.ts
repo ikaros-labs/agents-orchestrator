@@ -17,7 +17,7 @@ export const CreateJobSchema = z.object({
   mode: z.enum(["auto", "plan", "edit"]).optional().default("auto"),
   model: z.string().optional().default("claude-sonnet-4-6"),
   effort: z.enum(["low", "medium", "high", "max"]).optional().default("high"),
-  sandbox: z.enum(["none", "sandbox", "docker", "approval"]).optional().default("none"),
+  sandbox: z.enum(["none", "sandbox", "docker", "approval"]).optional().default("sandbox"),
 });
 
 export const ReviseSchema = z.object({
