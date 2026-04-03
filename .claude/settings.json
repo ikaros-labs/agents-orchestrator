@@ -11,7 +11,7 @@
   },
   "sandbox": {
     "filesystem": {
-      "allowWrite": ["/tmp/agents-orchestrator"]
+      "allowWrite": ["/tmp/agents-orchestrator", "/root/.agent-orchestrator"]
     }
   }
 }
