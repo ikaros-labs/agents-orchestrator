@@ -16,7 +16,7 @@ const activeControllers = new Map<string, AbortController>();
 
 // ── Directory constants ──────────────────────────────────────────────────────
 
-const AGENT_DIR = join(homedir(), ".agent-orchestrator");
+const AGENT_DIR = process.env.AGENT_ORCHESTRATOR_DIR ?? join(homedir(), ".agent-orchestrator");
 export const LOGS_DIR = join(AGENT_DIR, "logs");
 export const IMAGES_DIR = join(AGENT_DIR, "files");
 await mkdir(LOGS_DIR, { recursive: true });

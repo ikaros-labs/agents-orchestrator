@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { InputFile, Job, JobEffort, JobMode, JobStatus, JobUsage, LogEntry, SandboxMode } from "./types.ts";
 
-const DATA_DIR = join(homedir(), ".agent-orchestrator", "jobs");
+const AGENT_DIR = process.env.AGENT_ORCHESTRATOR_DIR ?? join(homedir(), ".agent-orchestrator");
+const DATA_DIR = join(AGENT_DIR, "jobs");
 mkdirSync(DATA_DIR, { recursive: true });
 
 const jobs = new Map<string, Job>();
