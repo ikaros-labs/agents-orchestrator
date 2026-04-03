@@ -1,24 +1,22 @@
 import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import type { CanUseTool, PermissionResult, SpawnedProcess, SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
+import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
+import { homedir } from "node:os";
+import { z } from "zod";
+import * as store from "./store.ts";
+import type { JobEffort, SandboxMode } from "./types.ts";
+import { jobStderr, makeStderrCapturingSpawner, makeDockerSpawner } from "./spawners.ts";
+import { resolveEffectiveCwd } from "./worktree.ts";
 
 // ── Active job AbortControllers ──────────────────────────────────────────────
 // One AbortController per running job. Used by stopJob() to cancel the SDK query.
 
 const activeControllers = new Map<string, AbortController>();
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { basename, extname, join } from "node:path";
-import { homedir } from "node:os";
-import * as store from "./store.ts";
-import type { Job, JobEffort, SandboxMode } from "./types.ts";
-
-const execFileAsync = promisify(execFile);
 
 // ── Directory constants ──────────────────────────────────────────────────────
 
 const AGENT_DIR = join(homedir(), ".agent-orchestrator");
-export const WORKTREES_DIR = process.env.AGENT_WORKTREES_DIR ?? join(AGENT_DIR, "worktrees");
 export const LOGS_DIR = join(AGENT_DIR, "logs");
 export const IMAGES_DIR = join(AGENT_DIR, "files");
 await mkdir(LOGS_DIR, { recursive: true });
@@ -60,8 +58,6 @@ const EXT_TO_MIME: Record<string, string> = {
   pdf: "application/pdf",
   mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
 };
-
-import { z } from "zod";
 
 function makeAttachFilesServer(jobId: string) {
   return createSdkMcpServer({
@@ -109,96 +105,6 @@ function worktreeSystemPrompt(inWorktree: boolean) {
       preset: "claude_code" as const,
       append: WORKTREE_SYSTEM_PROMPT_APPEND,
     },
-  };
-}
-
-// ── Stderr-capturing spawner ─────────────────────────────────────────────────
-// Wraps the default spawn to capture stderr from the Claude Code CLI process.
-// Without this, startup failures (e.g. missing deps) produce no diagnostics.
-
-import { spawn as nodeSpawn } from "node:child_process";
-
-/** Stores recent stderr lines per job so we can surface them in error messages. */
-const jobStderr = new Map<string, string[]>();
-
-function makeStderrCapturingSpawner(
-  jobId: string,
-): (opts: SpawnOptions) => SpawnedProcess {
-  return (opts: SpawnOptions): SpawnedProcess => {
-    const proc = nodeSpawn(opts.command, opts.args, {
-      cwd: opts.cwd,
-      env: opts.env,
-      stdio: ["pipe", "pipe", "pipe"],
-      signal: opts.signal,
-    });
-    if (!jobStderr.has(jobId)) jobStderr.set(jobId, []);
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString().trim();
-      if (text) {
-        console.error(`[stderr] job=${jobId}: ${text}`);
-        const lines = jobStderr.get(jobId)!;
-        lines.push(text);
-        // Keep only last 20 lines
-        if (lines.length > 20) lines.splice(0, lines.length - 20);
-      }
-    });
-    return proc as unknown as SpawnedProcess;
-  };
-}
-
-// ── Docker spawner ──────────────────────────────────────────────────────────
-
-const DOCKER_IMAGE = process.env.AGENT_DOCKER_IMAGE ?? "agents-orchestrator-worker:latest";
-
-function makeDockerSpawner(
-  jobId: string,
-  cwd: string | null,
-): (opts: SpawnOptions) => SpawnedProcess {
-  return (opts: SpawnOptions): SpawnedProcess => {
-    const dockerArgs = [
-      "run", "--rm", "-i",
-      "--name", `agent-${jobId}`,
-      // Security hardening
-      "--cap-drop", "ALL",
-      "--security-opt", "no-new-privileges",
-      // Resource limits
-      "--memory", "4g",
-      "--cpus", "2",
-      "--pids-limit", "200",
-      // Mount worktree
-      ...(cwd ? ["-v", `${cwd}:${cwd}`] : []),
-      // Mount session storage for resume support
-      "-v", `${homedir()}/.claude:/root/.claude`,
-      // Pass environment
-      ...Object.entries(opts.env)
-        .filter(([, v]) => v !== undefined)
-        .flatMap(([k, v]) => ["-e", `${k}=${v}`]),
-      // Working directory
-      ...(opts.cwd ? ["-w", opts.cwd] : []),
-      // Image and command
-      DOCKER_IMAGE,
-      opts.command, ...opts.args,
-    ];
-
-    const proc = nodeSpawn("docker", dockerArgs, { stdio: ["pipe", "pipe", "pipe"] });
-
-    if (!jobStderr.has(jobId)) jobStderr.set(jobId, []);
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString().trim();
-      if (text) {
-        console.error(`[stderr:docker] job=${jobId}: ${text}`);
-        const lines = jobStderr.get(jobId)!;
-        lines.push(text);
-        if (lines.length > 20) lines.splice(0, lines.length - 20);
-      }
-    });
-
-    // Wire abort signal to container stop
-    opts.signal.addEventListener("abort", () => {
-      nodeSpawn("docker", ["stop", `agent-${jobId}`], { stdio: "ignore" });
-    });
-
-    return proc as unknown as SpawnedProcess;
   };
 }
 
@@ -299,7 +205,7 @@ export function resolveToolApproval(id: string, toolUseID: string, result: Permi
 
 /**
  * Stops a running job: aborts its SDK query, rejects any pending tool approvals,
- * and marks the job as failed. Safe to call from any active status.
+ * and marks the job as stopped. Safe to call from any active status.
  */
 export function stopJob(id: string): boolean {
   const jobApprovals = pendingToolApprovals.get(id);
@@ -354,7 +260,6 @@ function makeCanUseTool(id: string): CanUseTool {
     });
   };
 }
-
 
 function handleJobError(id: string, err: unknown): void {
   let message = err instanceof Error ? err.message : String(err);
@@ -486,57 +391,27 @@ async function* makePrompt(prompt: string, rawImages: RawImage[], jobId: string)
   };
 }
 
-// ── Worktree helpers ─────────────────────────────────────────────────────────
+// ── Job runner lifecycle ──────────────────────────────────────────────────────
 
 /**
- * Creates a git worktree for a job at `WORKTREES_DIR/<jobId>` and returns the
- * absolute path to the new worktree. The base directory defaults to
- * `~/.agent-worktrees` and can be overridden via the `AGENT_WORKTREES_DIR`
- * environment variable. Throws if `cwd` is not inside a git repository or if
- * `git worktree add` fails.
+ * Shared wrapper for all job runners. Creates an AbortController, registers it,
+ * and handles abort detection, error handling, and cleanup in one place.
  */
-async function createWorktree(cwd: string, jobId: string): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
-  const gitRoot = stdout.trim();
-  const worktreesParent = WORKTREES_DIR;
-  await mkdir(worktreesParent, { recursive: true });
-  const worktreePath = join(worktreesParent, jobId);
-  const branchName = `agent/${jobId}`;
-  await execFileAsync("git", ["-C", gitRoot, "worktree", "add", "-b", branchName, worktreePath]);
-  return worktreePath;
-}
-
-/**
- * Removes the git worktree for a job.
- * Errors are logged but not thrown — archiving must always succeed.
- */
-export async function removeWorktree(job: Job): Promise<void> {
-  if (!job.worktreePath) return;
-  const { id, worktreePath } = job;
+async function runWithController(
+  id: string,
+  fn: (controller: AbortController) => Promise<void>,
+): Promise<void> {
+  const controller = new AbortController();
+  activeControllers.set(id, controller);
   try {
-    await execFileAsync("git", ["worktree", "remove", "--force", worktreePath]);
-    console.log(`[worktree] removed for job ${id}: ${worktreePath}`);
+    await fn(controller);
+    if (controller.signal.aborted) return;
   } catch (err) {
-    console.warn(`[worktree] failed to remove worktree for job ${id}: ${err}`);
-  }
-}
-
-/**
- * Resolves the effective cwd for an agent run.
- * - If `useWorktree` is false or `cwd` is null, returns `cwd` unchanged.
- * - Otherwise attempts to create a git worktree; on success stores the path on
- *   the job and returns it. On failure logs a warning and falls back to `cwd`.
- */
-async function resolveEffectiveCwd(id: string, cwd: string | null, useWorktree: boolean): Promise<string | null> {
-  if (!useWorktree || !cwd) return cwd;
-  try {
-    const worktreePath = await createWorktree(cwd, id);
-    store.setWorktreePath(id, worktreePath);
-    console.log(`[worktree] created for job ${id}: ${worktreePath}`);
-    return worktreePath;
-  } catch (err) {
-    console.warn(`[worktree] failed to create worktree for job ${id} (falling back to cwd): ${err}`);
-    return cwd;
+    if (controller.signal.aborted) return;
+    handleJobError(id, err);
+  } finally {
+    activeControllers.delete(id);
+    jobStderr.delete(id);
   }
 }
 
@@ -547,10 +422,8 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
   store.setStatus(id, "planning");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  const controller = new AbortController();
-  activeControllers.set(id, controller);
-  const planJobOpts = store.getJob(id);
-  try {
+  const job = store.getJob(id);
+  await runWithController(id, async (controller) => {
     // Planning phase always uses "plan" mode regardless of sandbox setting
     const stream = query({
       prompt: promptArg as any,
@@ -561,8 +434,8 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
         settingSources: ["user", "project", "local"],
         mcpServers: { orchestrator: makeAttachFilesServer(id) },
         abortController: controller,
-        ...(planJobOpts?.model ? { model: planJobOpts.model } : {}),
-        ...(planJobOpts?.effort ? { effort: planJobOpts.effort } : {}),
+        ...(job?.model ? { model: job.model } : {}),
+        ...(job?.effort ? { effort: job.effort } : {}),
         ...worktreeSystemPrompt(useWorktree),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
       },
@@ -572,24 +445,16 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
     const exitEntry = store.getJob(id)?.log.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
     store.setPlan(id, (exitEntry as any)?.input?.plan || planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
-  } catch (err) {
-    if (controller.signal.aborted) return;
-    handleJobError(id, err);
-  } finally {
-    activeControllers.delete(id);
-    jobStderr.delete(id);
-  }
+  });
 }
 
 export async function revisePlanJob(id: string, feedback: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
   console.log(`[revisePlanJob] id=${id}`);
   store.setStatus(id, "planning");
   store.appendLog(id, { type: "user", text: feedback, ts: new Date().toISOString() });
-  const revisePlanJobRef = store.getJob(id);
-  const inWorktree = !!revisePlanJobRef?.worktreePath;
-  const controller = new AbortController();
-  activeControllers.set(id, controller);
-  try {
+  const job = store.getJob(id);
+  const inWorktree = !!job?.worktreePath;
+  await runWithController(id, async (controller) => {
     // Planning phase always uses "plan" mode regardless of sandbox setting
     const stream = query({
       prompt: feedback,
@@ -601,8 +466,8 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
         mcpServers: { orchestrator: makeAttachFilesServer(id) },
         resume: sessionId,
         abortController: controller,
-        ...(revisePlanJobRef?.model ? { model: revisePlanJobRef.model } : {}),
-        ...(revisePlanJobRef?.effort ? { effort: revisePlanJobRef.effort } : {}),
+        ...(job?.model ? { model: job.model } : {}),
+        ...(job?.effort ? { effort: job.effort } : {}),
         ...worktreeSystemPrompt(inWorktree),
         ...(cwd ? { cwd } : {}),
       },
@@ -612,69 +477,47 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
     const exitEntry = store.getJob(id)?.log.slice().reverse().find(e => e.type === 'tool_call' && (e as any).name === 'ExitPlanMode');
     store.setPlan(id, (exitEntry as any)?.input?.plan || planTexts.join("\n"));
     store.setStatus(id, "awaiting_approval");
-  } catch (err) {
-    if (controller.signal.aborted) return;
-    handleJobError(id, err);
-  } finally {
-    activeControllers.delete(id);
-    jobStderr.delete(id);
-  }
+  });
 }
 
 export async function directExecuteJob(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
   console.log(`[directExecuteJob] id=${id}`);
   store.setStatus(id, "running");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
-  const directExecJob = store.getJob(id);
-  const sandbox = directExecJob?.sandbox ?? "none";
-  const inWorktree = !!directExecJob?.worktreePath;
+  const job = store.getJob(id);
+  const sandbox = job?.sandbox ?? "none";
+  const inWorktree = !!job?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  const controller = new AbortController();
-  activeControllers.set(id, controller);
-  try {
+  await runWithController(id, async (controller) => {
     const stream = query({
       prompt: promptArg as any,
       options: buildQueryOptions(id, sandbox, tools, effectiveCwd, inWorktree, {
-        model: directExecJob?.model, effort: directExecJob?.effort, abortController: controller,
+        model: job?.model, effort: job?.effort, abortController: controller,
       }),
     });
     await runQueryStream(id, stream, rawImages.length, { captureResult: true });
     if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
-  } catch (err) {
-    if (controller.signal.aborted) return;
-    handleJobError(id, err);
-  } finally {
-    activeControllers.delete(id);
-    jobStderr.delete(id);
-  }
+  });
 }
 
 export async function executeJob(id: string, sessionId: string, tools: string[], cwd: string | null): Promise<void> {
   console.log(`[executeJob] id=${id}`);
   store.setStatus(id, "running");
-  const execJobRef = store.getJob(id);
-  const sandbox = execJobRef?.sandbox ?? "none";
-  const inWorktree = !!execJobRef?.worktreePath;
-  const controller = new AbortController();
-  activeControllers.set(id, controller);
-  try {
+  const job = store.getJob(id);
+  const sandbox = job?.sandbox ?? "none";
+  const inWorktree = !!job?.worktreePath;
+  await runWithController(id, async (controller) => {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
       options: buildQueryOptions(id, sandbox, tools, cwd, inWorktree, {
-        sessionId, model: execJobRef?.model, effort: execJobRef?.effort, abortController: controller,
+        sessionId, model: job?.model, effort: job?.effort, abortController: controller,
       }),
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
-  } catch (err) {
-    if (controller.signal.aborted) return;
-    handleJobError(id, err);
-  } finally {
-    activeControllers.delete(id);
-    jobStderr.delete(id);
-  }
+  });
 }
 
 export async function followUpJob(id: string, prompt: string, sessionId: string | null, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
@@ -692,26 +535,18 @@ export async function followUpJob(id: string, prompt: string, sessionId: string 
   const promptArg = rawImages.length > 0
     ? makePrompt(prompt, rawImages, followupJobId)
     : prompt;
-  const followUpJobRef = store.getJob(id);
-  const sandbox = followUpJobRef?.sandbox ?? "none";
-  const inWorktree = !!followUpJobRef?.worktreePath;
-  const controller = new AbortController();
-  activeControllers.set(id, controller);
-  try {
+  const job = store.getJob(id);
+  const sandbox = job?.sandbox ?? "none";
+  const inWorktree = !!job?.worktreePath;
+  await runWithController(id, async (controller) => {
     const stream = query({
       prompt: promptArg as any,
       options: buildQueryOptions(id, sandbox, tools, cwd, inWorktree, {
-        sessionId: sessionId ?? undefined, model: followUpJobRef?.model, effort: followUpJobRef?.effort, abortController: controller,
+        sessionId: sessionId ?? undefined, model: job?.model, effort: job?.effort, abortController: controller,
       }),
     });
     await runQueryStream(id, stream, 0, { captureResult: true });
     if (controller.signal.aborted) return;
     store.setStatus(id, "completed");
-  } catch (err) {
-    if (controller.signal.aborted) return;
-    handleJobError(id, err);
-  } finally {
-    activeControllers.delete(id);
-    jobStderr.delete(id);
-  }
+  });
 }

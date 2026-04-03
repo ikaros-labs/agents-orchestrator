@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { ALLOWED_MEDIA_TYPES } from "./jobs.ts";
 
+export const DEFAULTS = {
+  model: "claude-sonnet-4-6",
+  effort: "high" as const,
+  mode: "auto" as const,
+  sandbox: "sandbox" as const,
+} as const;
+
 export const RawImageSchema = z.object({
   mediaType: z.string().refine(mt => ALLOWED_MEDIA_TYPES.has(mt), {
     message: `mediaType must be one of: ${[...ALLOWED_MEDIA_TYPES].join(", ")}`,
@@ -14,10 +21,10 @@ export const CreateJobSchema = z.object({
   cwd: z.string().optional(),
   useWorktree: z.boolean().optional().default(true),
   images: z.array(RawImageSchema).default([]),
-  mode: z.enum(["auto", "plan", "edit"]).optional().default("auto"),
-  model: z.string().optional().default("claude-sonnet-4-6"),
-  effort: z.enum(["low", "medium", "high", "max"]).optional().default("high"),
-  sandbox: z.enum(["none", "sandbox", "docker", "approval"]).optional().default("sandbox"),
+  mode: z.enum(["auto", "plan", "edit"]).optional().default(DEFAULTS.mode),
+  model: z.string().optional().default(DEFAULTS.model),
+  effort: z.enum(["low", "medium", "high", "max"]).optional().default(DEFAULTS.effort),
+  sandbox: z.enum(["none", "sandbox", "docker", "approval"]).optional().default(DEFAULTS.sandbox),
 });
 
 export const ReviseSchema = z.object({

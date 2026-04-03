@@ -134,9 +134,15 @@ export function getJob(id: string): Job | undefined {
   return jobs.get(id);
 }
 
-export function setStatus(id: string, status: JobStatus): void {
+function getJobOrWarn(id: string, caller: string): Job | undefined {
   const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setStatus: job not found: ${id}`); return; }
+  if (!job) console.warn(`[store] ${caller}: job not found: ${id}`);
+  return job;
+}
+
+export function setStatus(id: string, status: JobStatus): void {
+  const job = getJobOrWarn(id, "setStatus");
+  if (!job) return;
   job.status = status;
   if (status === "running") job.startedAt = new Date().toISOString();
   if (status === "completed" || status === "failed" || status === "stopped") job.finishedAt = new Date().toISOString();
@@ -145,15 +151,15 @@ export function setStatus(id: string, status: JobStatus): void {
 }
 
 export function appendLog(id: string, entry: LogEntry): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] appendLog: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "appendLog");
+  if (!job) return;
   job.log.push(entry);
   persistJob(job);
   emit({ type: "log_entry", jobId: id, entry, index: job.log.length - 1 });
 }
 
 export function patchLog(id: string, index: number, patch: Record<string, unknown>): void {
-  const job = jobs.get(id);
+  const job = getJobOrWarn(id, "patchLog");
   if (!job) return;
   const entry = job.log[index];
   if (!entry) return;
@@ -163,22 +169,22 @@ export function patchLog(id: string, index: number, patch: Record<string, unknow
 }
 
 export function setPlan(id: string, plan: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setPlan: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "setPlan");
+  if (!job) return;
   job.plan = plan;
   persistJob(job);
   emitJobStatus(job);
 }
 
 export function setSessionId(id: string, sessionId: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setSessionId: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "setSessionId");
+  if (!job) return;
   job.sessionId = sessionId;
   persistJob(job);
 }
 
 export function setTitle(id: string, title: string): void {
-  const job = jobs.get(id);
+  const job = getJobOrWarn(id, "setTitle");
   if (!job) return;
   job.title = title;
   persistJob(job);
@@ -186,55 +192,55 @@ export function setTitle(id: string, title: string): void {
 }
 
 export function setModel(id: string, model: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setModel: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "setModel");
+  if (!job) return;
   job.model = model;
   persistJob(job);
   emitJobStatus(job);
 }
 
 export function setWorktreePath(id: string, worktreePath: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setWorktreePath: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "setWorktreePath");
+  if (!job) return;
   job.worktreePath = worktreePath;
   persistJob(job);
 }
 
 export function setResult(id: string, result: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setResult: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "setResult");
+  if (!job) return;
   job.result = result;
   persistJob(job);
   emitJobStatus(job);
 }
 
 export function setError(id: string, error: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setError: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "setError");
+  if (!job) return;
   job.error = error;
   persistJob(job);
   emitJobStatus(job);
 }
 
 export function addPendingTool(id: string, toolUseID: string, name: string, input: Record<string, unknown>, agentID?: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] addPendingTool: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "addPendingTool");
+  if (!job) return;
   job.pendingTools.push({ toolUseID, name, input, agentID });
   persistJob(job);
   emitJobStatus(job);
 }
 
 export function removePendingTool(id: string, toolUseID: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] removePendingTool: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "removePendingTool");
+  if (!job) return;
   job.pendingTools = job.pendingTools.filter(t => t.toolUseID !== toolUseID);
   persistJob(job);
   emitJobStatus(job);
 }
 
 export function clearResult(id: string): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] clearResult: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "clearResult");
+  if (!job) return;
   job.result = null;
   job.error = null;
   persistJob(job);
@@ -242,16 +248,16 @@ export function clearResult(id: string): void {
 }
 
 export function setArchived(id: string, archived: boolean): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] setArchived: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "setArchived");
+  if (!job) return;
   job.archived = archived;
   persistJob(job);
   emitJobStatus(job);
 }
 
 export function addUsage(id: string, delta: JobUsage): void {
-  const job = jobs.get(id);
-  if (!job) { console.warn(`[store] addUsage: job not found: ${id}`); return; }
+  const job = getJobOrWarn(id, "addUsage");
+  if (!job) return;
   if (job.usage === null) {
     job.usage = { totalTokens: delta.totalTokens, costUSD: delta.costUSD };
   } else {
