@@ -658,9 +658,18 @@ function renderDetail(job) {
   const scrollState = captureScrollState();
   const inputState = captureInputState(job.id);
 
+  const cwd = job.worktreePath ?? job.cwd;
+  const exitPlanIdx = job.plan
+    ? job.chat.findIndex(e => e.type === 'tool_call' && e.name === 'ExitPlanMode')
+    : -1;
+  const chatHtml = job.chat.map((e, i) => {
+    const html = renderChatEntry(e, cwd);
+    return i === exitPlanIdx ? html + renderPlanCard(job) : html;
+  }).join('');
+
   const feedHtml = `<div class="chat-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}`
-    + job.chat.map(e => renderChatEntry(e, job.worktreePath ?? job.cwd)).join('')
-    + renderPlanCard(job)
+    + chatHtml
+    + (exitPlanIdx === -1 ? renderPlanCard(job) : '')
     + renderResultBox(job)
     + renderQuestionBar(job);
 
