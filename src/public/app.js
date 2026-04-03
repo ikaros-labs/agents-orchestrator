@@ -24,7 +24,7 @@ let renderDetailFresh = false; // when true, next renderDetail call always scrol
 let currentMode = 'auto';
 let currentModel = 'claude-sonnet-4-6';
 let currentEffort = 'high';
-let currentSandbox = 'none';
+let currentSandbox = 'sandbox';
 let showArchived = false;
 
 // ── File attachment state ───────────────────────────────────────────────────
