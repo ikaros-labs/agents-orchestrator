@@ -112,6 +112,40 @@ function worktreeSystemPrompt(inWorktree: boolean) {
   };
 }
 
+// ── Stderr-capturing spawner ─────────────────────────────────────────────────
+// Wraps the default spawn to capture stderr from the Claude Code CLI process.
+// Without this, startup failures (e.g. missing deps) produce no diagnostics.
+
+import { spawn as nodeSpawn } from "node:child_process";
+
+/** Stores recent stderr lines per job so we can surface them in error messages. */
+const jobStderr = new Map<string, string[]>();
+
+function makeStderrCapturingSpawner(
+  jobId: string,
+): (opts: SpawnOptions) => SpawnedProcess {
+  return (opts: SpawnOptions): SpawnedProcess => {
+    const proc = nodeSpawn(opts.command, opts.args, {
+      cwd: opts.cwd,
+      env: opts.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      signal: opts.signal,
+    });
+    if (!jobStderr.has(jobId)) jobStderr.set(jobId, []);
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      if (text) {
+        console.error(`[stderr] job=${jobId}: ${text}`);
+        const lines = jobStderr.get(jobId)!;
+        lines.push(text);
+        // Keep only last 20 lines
+        if (lines.length > 20) lines.splice(0, lines.length - 20);
+      }
+    });
+    return proc as unknown as SpawnedProcess;
+  };
+}
+
 // ── Docker spawner ──────────────────────────────────────────────────────────
 
 const DOCKER_IMAGE = process.env.AGENT_DOCKER_IMAGE ?? "agents-orchestrator-worker:latest";
@@ -121,7 +155,6 @@ function makeDockerSpawner(
   cwd: string | null,
 ): (opts: SpawnOptions) => SpawnedProcess {
   return (opts: SpawnOptions): SpawnedProcess => {
-    const { spawn } = require("node:child_process");
     const dockerArgs = [
       "run", "--rm", "-i",
       "--name", `agent-${jobId}`,
@@ -147,11 +180,22 @@ function makeDockerSpawner(
       opts.command, ...opts.args,
     ];
 
-    const proc = spawn("docker", dockerArgs, { stdio: ["pipe", "pipe", "pipe"] });
+    const proc = nodeSpawn("docker", dockerArgs, { stdio: ["pipe", "pipe", "pipe"] });
+
+    if (!jobStderr.has(jobId)) jobStderr.set(jobId, []);
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      if (text) {
+        console.error(`[stderr:docker] job=${jobId}: ${text}`);
+        const lines = jobStderr.get(jobId)!;
+        lines.push(text);
+        if (lines.length > 20) lines.splice(0, lines.length - 20);
+      }
+    });
 
     // Wire abort signal to container stop
     opts.signal.addEventListener("abort", () => {
-      spawn("docker", ["stop", `agent-${jobId}`], { stdio: "ignore" });
+      nodeSpawn("docker", ["stop", `agent-${jobId}`], { stdio: "ignore" });
     });
 
     return proc as unknown as SpawnedProcess;
@@ -159,6 +203,17 @@ function makeDockerSpawner(
 }
 
 // ── Sandbox-aware query options builder ──────────────────────────────────────
+//
+// Non-approval modes use acceptEdits + allowedTools to auto-approve all tools.
+// We avoid bypassPermissions because it requires --dangerously-skip-permissions
+// which the CLI refuses when running as root.
+
+/** All built-in tools the SDK/CLI exposes. Listing them in allowedTools auto-approves each one. */
+const ALL_SDK_TOOLS = [
+  "Bash", "Read", "Edit", "Write", "Glob", "Grep",
+  "WebSearch", "WebFetch", "Agent", "NotebookEdit",
+  "AskUserQuestion", "ExitPlanMode",
+];
 
 function buildQueryOptions(
   id: string,
@@ -168,12 +223,13 @@ function buildQueryOptions(
   inWorktree: boolean,
   opts: { sessionId?: string; model?: string | null; effort?: JobEffort | null; abortController: AbortController },
 ): Record<string, any> {
-  const allTools = [...tools, "mcp__orchestrator__attach_files"];
+  const allTools = [...new Set([...tools, ...ALL_SDK_TOOLS, "mcp__orchestrator__attach_files"])];
   const base = {
     allowedTools: allTools,
     settingSources: ["user", "project", "local"] as const,
     mcpServers: { orchestrator: makeAttachFilesServer(id) },
     abortController: opts.abortController,
+    spawnClaudeCodeProcess: makeStderrCapturingSpawner(id),
     ...(opts.sessionId ? { resume: opts.sessionId } : {}),
     ...(opts.model ? { model: opts.model } : {}),
     ...(opts.effort ? { effort: opts.effort } : {}),
@@ -185,16 +241,15 @@ function buildQueryOptions(
     return { ...base, permissionMode: "acceptEdits" as const, canUseTool: makeCanUseTool(id) };
   }
 
-  // All non-approval modes use bypassPermissions
-  const bypass = {
+  // All non-approval modes auto-approve everything via acceptEdits + allowedTools
+  const autoApprove = {
     ...base,
-    permissionMode: "bypassPermissions" as const,
-    allowDangerouslySkipPermissions: true,
+    permissionMode: "acceptEdits" as const,
   };
 
   if (sandbox === "sandbox") {
     return {
-      ...bypass,
+      ...autoApprove,
       sandbox: {
         enabled: true,
         autoAllowBashIfSandboxed: true,
@@ -205,13 +260,13 @@ function buildQueryOptions(
 
   if (sandbox === "docker") {
     return {
-      ...bypass,
+      ...autoApprove,
       spawnClaudeCodeProcess: makeDockerSpawner(id, cwd),
     };
   }
 
-  // "none" — bypass with no extra isolation
-  return bypass;
+  // "none" — auto-approve with no extra isolation
+  return autoApprove;
 }
 
 // ── Tool approval map ────────────────────────────────────────────────────────
@@ -259,6 +314,7 @@ export function stopJob(id: string): boolean {
   if (controller) {
     controller.abort();
     activeControllers.delete(id);
+    jobStderr.delete(id);
   }
 
   store.setStatus(id, "stopped");
@@ -301,7 +357,14 @@ function makeCanUseTool(id: string): CanUseTool {
 
 
 function handleJobError(id: string, err: unknown): void {
-  store.setError(id, err instanceof Error ? err.message : String(err));
+  let message = err instanceof Error ? err.message : String(err);
+  // Append captured stderr if available — often contains the real reason for crashes
+  const stderr = jobStderr.get(id);
+  if (stderr?.length) {
+    message += "\n\nProcess stderr:\n" + stderr.join("\n");
+  }
+  jobStderr.delete(id);
+  store.setError(id, message);
   store.setStatus(id, "failed");
 }
 
@@ -514,6 +577,7 @@ export async function planJob(id: string, prompt: string, tools: string[], cwd: 
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
+    jobStderr.delete(id);
   }
 }
 
@@ -553,6 +617,7 @@ export async function revisePlanJob(id: string, feedback: string, sessionId: str
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
+    jobStderr.delete(id);
   }
 }
 
@@ -581,6 +646,7 @@ export async function directExecuteJob(id: string, prompt: string, tools: string
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
+    jobStderr.delete(id);
   }
 }
 
@@ -607,6 +673,7 @@ export async function executeJob(id: string, sessionId: string, tools: string[],
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
+    jobStderr.delete(id);
   }
 }
 
@@ -645,5 +712,6 @@ export async function followUpJob(id: string, prompt: string, sessionId: string 
     handleJobError(id, err);
   } finally {
     activeControllers.delete(id);
+    jobStderr.delete(id);
   }
 }
