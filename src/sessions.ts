@@ -194,6 +194,7 @@ export function hasPendingApproval(id: string, toolUseID: string): boolean {
  * was found, true on success.
  */
 export function resolveToolApproval(id: string, toolUseID: string, result: PermissionResult): boolean {
+  console.log(`[resolveToolApproval] id=${id} toolUseID=${toolUseID} result=${JSON.stringify(result)}`);
   const sessionApprovals = pendingToolApprovals.get(id);
   const pending = sessionApprovals?.get(toolUseID);
   if (!pending) return false;
