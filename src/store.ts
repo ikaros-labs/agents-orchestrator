@@ -105,7 +105,7 @@ export function loadStore(): void {
   }
 }
 
-export function createSession(id: string, prompt: string, tools: string[], cwd: string | null = null, images: InputFile[] = [], mode: SessionMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: SessionEffort | null = null, sandbox: SandboxMode = "none"): Session {
+export function createSession(id: string, prompt: string, cwd: string | null = null, images: InputFile[] = [], mode: SessionMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: SessionEffort | null = null, sandbox: SandboxMode = "none"): Session {
   const session: Session = {
     id,
     status: "pending",
@@ -114,7 +114,6 @@ export function createSession(id: string, prompt: string, tools: string[], cwd: 
     effort,
     prompt,
     title: null,
-    tools,
     cwd,
     useWorktree,
     worktreePath: null,
