@@ -159,7 +159,6 @@ function buildQueryOptions(
       sandbox: {
         enabled: true,
         autoAllowBashIfSandboxed: true,
-        network: { allowedDomains: ["api.anthropic.com", "github.com", "*.githubusercontent.com"] },
       },
     };
   }
