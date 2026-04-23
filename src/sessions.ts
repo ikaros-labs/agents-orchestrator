@@ -110,28 +110,19 @@ function worktreeSystemPrompt(inWorktree: boolean) {
 
 // ── Sandbox-aware query options builder ──────────────────────────────────────
 //
-// Non-approval modes use acceptEdits + allowedTools to auto-approve all tools.
-// We avoid bypassPermissions because it requires --dangerously-skip-permissions
-// which the CLI refuses when running as root.
-
-/** All built-in tools the SDK/CLI exposes. Listing them in allowedTools auto-approves each one. */
-const ALL_SDK_TOOLS = [
-  "Bash", "Read", "Edit", "Write", "Glob", "Grep",
-  "WebSearch", "WebFetch", "Agent", "NotebookEdit",
-  "AskUserQuestion", "ExitPlanMode",
-];
+// We use the claude_code preset for tool availability and let the SDK's
+// permission system handle approvals (including sandbox denyRead enforcement).
+// allowedTools blanket-bypasses the permission system so we avoid it.
 
 function buildQueryOptions(
   id: string,
   sandbox: SandboxMode,
-  tools: string[],
   cwd: string | null,
   inWorktree: boolean,
   opts: { claudeSessionId?: string; model?: string | null; effort?: SessionEffort | null; abortController: AbortController },
 ): Record<string, any> {
-  const allTools = [...new Set([...tools, ...ALL_SDK_TOOLS, "mcp__orchestrator__attach_files"])];
   const base = {
-    allowedTools: allTools,
+    tools: { type: "preset" as const, preset: "claude_code" as const },
     settingSources: ["user", "project", "local"] as const,
     mcpServers: { orchestrator: makeAttachFilesServer(id) },
     abortController: opts.abortController,
@@ -147,7 +138,7 @@ function buildQueryOptions(
     return { ...base, permissionMode: "acceptEdits" as const, canUseTool: makeCanUseTool(id) };
   }
 
-  // All non-approval modes auto-approve everything via acceptEdits + allowedTools
+  // Non-approval modes use acceptEdits; the SDK permission system handles approvals.
   const autoApprove = {
     ...base,
     permissionMode: "acceptEdits" as const,
@@ -159,6 +150,9 @@ function buildQueryOptions(
       sandbox: {
         enabled: true,
         autoAllowBashIfSandboxed: true,
+        filesystem: {
+          denyRead: ["/root/.ssh", "~/.ssh"],
+        },
       },
     };
   }
@@ -413,7 +407,7 @@ async function runWithController(
 
 // ── Session runners (exported) ───────────────────────────────────────────────
 
-export async function planSession(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
+export async function planSession(id: string, prompt: string, cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
   console.log(`[planSession] id=${id}`);
   store.setStatus(id, "planning");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
@@ -424,7 +418,7 @@ export async function planSession(id: string, prompt: string, tools: string[], c
     const stream = query({
       prompt: promptArg as any,
       options: {
-        allowedTools: [...tools, "mcp__orchestrator__attach_files"],
+        tools: { type: "preset" as const, preset: "claude_code" as const },
         permissionMode: "plan",
         canUseTool: makeCanUseTool(id),
         settingSources: ["user", "project", "local"],
@@ -442,7 +436,7 @@ export async function planSession(id: string, prompt: string, tools: string[], c
   });
 }
 
-export async function revisePlanSession(id: string, feedback: string, claudeSessionId: string, tools: string[], cwd: string | null): Promise<void> {
+export async function revisePlanSession(id: string, feedback: string, claudeSessionId: string, cwd: string | null): Promise<void> {
   console.log(`[revisePlanSession] id=${id}`);
   store.setStatus(id, "planning");
   store.appendChat(id, { type: "user", text: feedback, ts: new Date().toISOString() });
@@ -453,7 +447,7 @@ export async function revisePlanSession(id: string, feedback: string, claudeSess
     const stream = query({
       prompt: feedback,
       options: {
-        allowedTools: [...tools, "mcp__orchestrator__attach_files"],
+        tools: { type: "preset" as const, preset: "claude_code" as const },
         permissionMode: "plan",
         canUseTool: makeCanUseTool(id),
         settingSources: ["user", "project", "local"],
@@ -472,7 +466,7 @@ export async function revisePlanSession(id: string, feedback: string, claudeSess
   });
 }
 
-export async function directExecuteSession(id: string, prompt: string, tools: string[], cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
+export async function directExecuteSession(id: string, prompt: string, cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
   console.log(`[directExecuteSession] id=${id}`);
   store.setStatus(id, "running");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
@@ -483,7 +477,7 @@ export async function directExecuteSession(id: string, prompt: string, tools: st
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: promptArg as any,
-      options: buildQueryOptions(id, sandbox, tools, effectiveCwd, inWorktree, {
+      options: buildQueryOptions(id, sandbox, effectiveCwd, inWorktree, {
         model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });
@@ -493,7 +487,7 @@ export async function directExecuteSession(id: string, prompt: string, tools: st
   });
 }
 
-export async function executeSession(id: string, claudeSessionId: string, tools: string[], cwd: string | null): Promise<void> {
+export async function executeSession(id: string, claudeSessionId: string, cwd: string | null): Promise<void> {
   console.log(`[executeSession] id=${id}`);
   store.setStatus(id, "running");
   const session = store.getSession(id);
@@ -502,7 +496,7 @@ export async function executeSession(id: string, claudeSessionId: string, tools:
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: buildQueryOptions(id, sandbox, tools, cwd, inWorktree, {
+      options: buildQueryOptions(id, sandbox, cwd, inWorktree, {
         claudeSessionId, model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });
@@ -512,7 +506,7 @@ export async function executeSession(id: string, claudeSessionId: string, tools:
   });
 }
 
-export async function followUpSession(id: string, prompt: string, claudeSessionId: string | null, tools: string[], cwd: string | null, rawImages: RawImage[]): Promise<void> {
+export async function followUpSession(id: string, prompt: string, claudeSessionId: string | null, cwd: string | null, rawImages: RawImage[]): Promise<void> {
   console.log(`[followUpSession] id=${id}`);
   store.setStatus(id, "running");
   store.clearResult(id);
@@ -533,7 +527,7 @@ export async function followUpSession(id: string, prompt: string, claudeSessionI
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: promptArg as any,
-      options: buildQueryOptions(id, sandbox, tools, cwd, inWorktree, {
+      options: buildQueryOptions(id, sandbox, cwd, inWorktree, {
         claudeSessionId: claudeSessionId ?? undefined, model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });

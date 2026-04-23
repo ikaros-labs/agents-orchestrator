@@ -148,7 +148,6 @@ Bun.serve({
         if (parsed instanceof Response) return parsed;
         const { prompt, cwd = null, useWorktree, images: rawImages, mode, model, effort, sandbox } = parsed.data;
 
-        const tools = sessions.DEFAULT_TOOLS;
         const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
 
         // Build InputFile refs (filenames will be <index>.<ext>)
@@ -157,13 +156,13 @@ Bun.serve({
           filename: `${i}.${sessions.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
         }));
 
-        store.createSession(id, prompt, tools, cwd, inputImageRefs, mode as SessionMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
+        store.createSession(id, prompt, sessions.DEFAULT_TOOLS, cwd, inputImageRefs, mode as SessionMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
         generateTitle(prompt, rawImages).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
-          Promise.resolve().then(() => sessions.directExecuteSession(id, prompt, tools, cwd, rawImages, useWorktree));
+          Promise.resolve().then(() => sessions.directExecuteSession(id, prompt, cwd, rawImages, useWorktree));
         } else {
           // "auto" and "plan" both use the planning flow
-          Promise.resolve().then(() => sessions.planSession(id, prompt, tools, cwd, rawImages, useWorktree));
+          Promise.resolve().then(() => sessions.planSession(id, prompt, cwd, rawImages, useWorktree));
         }
 
         return Response.json({ id, status: "pending" }, { status: 202 });
@@ -194,7 +193,7 @@ Bun.serve({
         store.setModel(id, parsed.data.model);
       }
       store.setMode(id, "edit");
-      Promise.resolve().then(() => sessions.executeSession(id, session.claudeSessionId!, session.tools, session.worktreePath ?? session.cwd));
+      Promise.resolve().then(() => sessions.executeSession(id, session.claudeSessionId!, session.worktreePath ?? session.cwd));
       return Response.json({ id, status: "running" }, { status: 202 });
     },
 
@@ -216,7 +215,7 @@ Bun.serve({
       if (!session.claudeSessionId) return jsonError(500, "No Claude session ID available for revision");
       const parsed = await parseBody(req, ReviseSchema);
       if (parsed instanceof Response) return parsed;
-      Promise.resolve().then(() => sessions.revisePlanSession(id, parsed.data.prompt, session.claudeSessionId!, session.tools, session.worktreePath ?? session.cwd));
+      Promise.resolve().then(() => sessions.revisePlanSession(id, parsed.data.prompt, session.claudeSessionId!, session.worktreePath ?? session.cwd));
       return Response.json({ id, status: "planning" }, { status: 202 });
     },
 
@@ -327,7 +326,7 @@ Bun.serve({
       const parsed = await parseBody(req, FollowUpSchema);
       if (parsed instanceof Response) return parsed;
       const { prompt, images: rawImages } = parsed.data;
-      Promise.resolve().then(() => sessions.followUpSession(id, prompt, session.claudeSessionId, session.tools, session.worktreePath ?? session.cwd, rawImages));
+      Promise.resolve().then(() => sessions.followUpSession(id, prompt, session.claudeSessionId, session.worktreePath ?? session.cwd, rawImages));
       return Response.json({ id, status: "running" }, { status: 202 });
     },
   },
