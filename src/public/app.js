@@ -574,14 +574,18 @@ function renderToolApprovalBar(job) {
   if (job.status !== 'awaiting_tool_approval') return '';
   const pendingToolsList = (job.pendingTools ?? []).filter(t => t.name !== 'AskUserQuestion');
   if (!pendingToolsList.length) return '';
-  return pendingToolsList.map(tool => {
-    const inputRows = Object.entries(tool.input || {})
-      .map(([k, v]) => {
-        const val = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
-        return `<div class="tool-input-row"><span class="tool-input-key">${escHtml(k)}</span><span class="tool-input-val">${escHtml(val)}</span></div>`;
-      }).join('');
-    const toolUseID = escHtml(tool.toolUseID);
-    return `<div class="tool-approval-bar">
+  const tool = pendingToolsList[0];
+  const queueCount = pendingToolsList.length - 1;
+  const inputRows = Object.entries(tool.input || {})
+    .map(([k, v]) => {
+      const val = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+      return `<div class="tool-input-row"><span class="tool-input-key">${escHtml(k)}</span><span class="tool-input-val">${escHtml(val)}</span></div>`;
+    }).join('');
+  const toolUseID = escHtml(tool.toolUseID);
+  const queueBadge = queueCount > 0
+    ? `<div class="tool-queue-count">${queueCount} more pending in queue</div>`
+    : '';
+  return `<div class="tool-approval-bar">
       <div class="tool-approval-header">
         <span class="tool-approval-label">Tool request</span>
         <span class="tool-approval-name">${escHtml(tool.name)}</span>
@@ -592,8 +596,7 @@ function renderToolApprovalBar(job) {
         <input type="text" class="tool-deny-reason" placeholder="Reason for denying (optional)">
         <button class="btn-reject" onclick="rejectToolUse('${job.id}', '${toolUseID}', this)">Deny</button>
       </div>
-    </div>`;
-  }).join('');
+    </div>${queueBadge}`;
 }
 
 function renderFollowUpBar(job) {

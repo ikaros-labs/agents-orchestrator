@@ -107,6 +107,7 @@ details.chat-tool-bash[open] > summary { border-bottom-left-radius: 0; border-bo
 .tool-approval-actions { display: flex; gap: 10px; align-items: center; }
 .tool-deny-reason { flex: 1; background: #0b0b14; color: #d1d5db; border: 1px solid #2a2a3a; border-radius: 6px; padding: 7px 10px; font-size: 12px; outline: none; }
 .tool-deny-reason:focus { border-color: #7f1d1d; }
+.tool-queue-count { font-size: 11px; color: #6b7280; padding: 4px 20px 0; }
 
 /* ── Question bar (AskUserQuestion) ─────────────────────────────────────── */
 .question-bar { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 0; }
