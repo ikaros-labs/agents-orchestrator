@@ -28,7 +28,6 @@ export interface Session {
   effort: SessionEffort | null;
   prompt: string;
   title: string | null;
-  tools: string[];
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;

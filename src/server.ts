@@ -156,7 +156,7 @@ Bun.serve({
           filename: `${i}.${sessions.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
         }));
 
-        store.createSession(id, prompt, sessions.DEFAULT_TOOLS, cwd, inputImageRefs, mode as SessionMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
+        store.createSession(id, prompt, cwd, inputImageRefs, mode as SessionMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
         generateTitle(prompt, rawImages).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
           Promise.resolve().then(() => sessions.directExecuteSession(id, prompt, cwd, rawImages, useWorktree));

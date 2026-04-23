@@ -48,8 +48,6 @@ export const MEDIA_TYPE_EXT: Record<string, string> = {
   "application/xml": "xml",
 };
 
-export const DEFAULT_TOOLS = ["Read", "Edit", "Glob", "Write", "Grep", "WebSearch", "WebFetch", "AskUserQuestion", "ExitPlanMode", "mcp__orchestrator__attach_files"];
-
 // ── AttachFiles MCP tool ─────────────────────────────────────────────────────
 
 const EXT_TO_MIME: Record<string, string> = {
