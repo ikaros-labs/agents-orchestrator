@@ -3,8 +3,9 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "strict": true,
+    "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "types": ["bun-types"]
