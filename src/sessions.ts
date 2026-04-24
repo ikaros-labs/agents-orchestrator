@@ -145,6 +145,7 @@ function buildQueryOptions(
   if (sandbox === "sandbox") {
     return {
       ...autoApprove,
+      canUseTool: makeCanUseTool(id),
       sandbox: {
         enabled: true,
         autoAllowBashIfSandboxed: true,
@@ -158,12 +159,13 @@ function buildQueryOptions(
   if (sandbox === "docker") {
     return {
       ...autoApprove,
+      canUseTool: makeAutoApproveCanUseTool(id),
       spawnClaudeCodeProcess: makeDockerSpawner(id, cwd),
     };
   }
 
   // "none" — auto-approve with no extra isolation
-  return autoApprove;
+  return { ...autoApprove, canUseTool: makeAutoApproveCanUseTool(id) };
 }
 
 // ── Tool approval map ────────────────────────────────────────────────────────
@@ -220,6 +222,13 @@ export function stopSession(id: string): boolean {
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
+
+function makeAutoApproveCanUseTool(id: string): CanUseTool {
+  return async (toolName: string, input: Record<string, unknown>, _options): Promise<PermissionResult> => {
+    console.log(`[canUseTool:auto] id=${id} tool=${toolName}`);
+    return { behavior: "allow", updatedInput: input };
+  };
+}
 
 function makeCanUseTool(id: string): CanUseTool {
   return async (toolName: string, input: Record<string, unknown>, options): Promise<PermissionResult> => {
