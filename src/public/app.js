@@ -26,6 +26,7 @@ let currentModel = 'claude-sonnet-4-6';
 let currentEffort = 'high';
 let currentSandbox = 'sandbox';
 let showArchived = false;
+let archivedCount = 0;
 const approvalModels = {}; // sessionId → model selected for execution at approval time
 
 // ── File attachment state ───────────────────────────────────────────────────
@@ -240,7 +241,6 @@ function md(text) {
 // ── Session list ───────────────────────────────────────────────────────────
 function renderList(list) {
   // Update sidebar header with archive toggle
-  const archivedCount = list.filter(j => j.archived).length;
   const hdr = document.getElementById('sidebar-header');
   if (hdr) {
     const archivedBtn = (archivedCount > 0 || showArchived)
@@ -283,8 +283,12 @@ function renderList(list) {
   `).join('');
 }
 
-function toggleShowArchived() {
+async function toggleShowArchived() {
   showArchived = !showArchived;
+  if (showArchived) {
+    const all = await fetch('/sessions?archived=true').then(r => r.json()).catch(() => []);
+    all.forEach(j => { sessions[j.id] = j; });
+  }
   renderList(getSortedJobs());
 }
 
@@ -852,9 +856,11 @@ function appendChatEntryDOM(entry, jobId, index) {
 function initSSE() {
   const es = new EventSource('/events');
 
-  // Initial snapshot: full current state of all sessions (sent on every connect/reconnect)
+  // Initial snapshot: active sessions + archived count (sent on every connect/reconnect)
   es.addEventListener('snapshot', e => {
-    const list = JSON.parse(e.data);
+    const data = JSON.parse(e.data);
+    const list = data.sessions;
+    archivedCount = data.archivedCount;
     list.forEach(j => { sessions[j.id] = j; });
     renderList(list); // already server-sorted
     updateCwdSelect(list);
@@ -893,7 +899,11 @@ function initSSE() {
     const session = sessions[jobId];
     if (!session) return;
     const prevStatus = session.status;
+    const prevArchived = session.archived;
     Object.assign(session, { status, startedAt, finishedAt, result, error, claudeSessionId, pendingTools, archived, usage, title });
+    if (prevArchived !== archived) {
+      archivedCount += archived ? 1 : -1;
+    }
     if (prevStatus !== status) {
       if (['awaiting_approval', 'awaiting_tool_approval', 'awaiting_user_question'].includes(status)) {
         playSound('attention');

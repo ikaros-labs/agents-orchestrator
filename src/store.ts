@@ -284,8 +284,16 @@ function getLatestUserMessageTime(session: Session): number {
   return Math.max(new Date(session.createdAt).getTime(), ...times);
 }
 
-export function listSessions(): Session[] {
-  return Array.from(sessions.values()).sort(
-    (a, b) => getLatestUserMessageTime(b) - getLatestUserMessageTime(a)
-  );
+export function listSessions(includeArchived = false): Session[] {
+  return Array.from(sessions.values())
+    .filter(s => includeArchived || !s.archived)
+    .sort((a, b) => getLatestUserMessageTime(b) - getLatestUserMessageTime(a));
+}
+
+export function countArchivedSessions(): number {
+  let count = 0;
+  for (const s of sessions.values()) {
+    if (s.archived) count++;
+  }
+  return count;
 }
