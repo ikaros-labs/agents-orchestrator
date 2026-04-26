@@ -139,11 +139,6 @@ function buildQueryOptions(
     return base;
   }
 
-  if (sandbox === "approval") {
-    return { ...base, permissionMode: "acceptEdits" as const, canUseTool: makeCanUseTool(id) };
-  }
-
-  // Non-approval modes use acceptEdits; the SDK permission system handles approvals.
   const autoApprove = {
     ...base,
     permissionMode: "acceptEdits" as const,

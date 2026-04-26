@@ -225,7 +225,6 @@ Bun.serve({
       const { id } = req.params;
       const session = store.getSession(id);
       if (!session) return jsonError(404, "Session not found");
-      if (session.sandbox !== "approval") return jsonError(409, "Session does not use approval mode");
       if (session.status !== "awaiting_tool_approval") return jsonError(409, "Session is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;
@@ -244,7 +243,6 @@ Bun.serve({
       const { id } = req.params;
       const session = store.getSession(id);
       if (!session) return jsonError(404, "Session not found");
-      if (session.sandbox !== "approval") return jsonError(409, "Session does not use approval mode");
       if (session.status !== "awaiting_tool_approval") return jsonError(409, "Session is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;

@@ -23,7 +23,7 @@ export const CreateSessionSchema = z.object({
   mode: z.enum(["auto", "plan", "edit"]).optional().default(DEFAULTS.mode),
   model: z.string().optional().default(DEFAULTS.model),
   effort: z.enum(["low", "medium", "high", "max"]).optional().default(DEFAULTS.effort),
-  sandbox: z.enum(["none", "sandbox", "docker", "approval"]).optional().default(DEFAULTS.sandbox),
+  sandbox: z.enum(["none", "sandbox", "docker"]).optional().default(DEFAULTS.sandbox),
 });
 
 export const ReviseSchema = z.object({
