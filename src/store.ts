@@ -2,6 +2,9 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { InputFile, Session, SessionEffort, SessionMode, SessionStatus, SessionUsage, ChatEntry, SandboxMode } from "./types.ts";
+import logger from './logger.ts';
+
+const log = logger.child({ component: 'store' });
 
 const AGENT_DIR = process.env.AGENT_ORCHESTRATOR_DIR ?? join(homedir(), ".agent-orchestrator");
 const DATA_DIR = join(AGENT_DIR, "jobs");
@@ -142,7 +145,7 @@ export function getSession(id: string): Session | undefined {
 
 function getSessionOrWarn(id: string, caller: string): Session | undefined {
   const session = sessions.get(id);
-  if (!session) console.warn(`[store] ${caller}: session not found: ${id}`);
+  if (!session) log.warn({ caller, id }, 'session not found');
   return session;
 }
 
