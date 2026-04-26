@@ -5,7 +5,7 @@ import { basename, extname, join } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
 import * as store from "./store.ts";
-import type { SessionEffort, SandboxMode } from "./types.ts";
+import type { SessionEffort, SandboxMode, SessionStatus } from "./types.ts";
 import { jobStderr, makeStderrCapturingSpawner, makeDockerSpawner } from "./spawners.ts";
 import { resolveEffectiveCwd } from "./worktree.ts";
 
@@ -402,6 +402,37 @@ async function runWithController(
   }
 }
 
+// ── Session runner core ──────────────────────────────────────────────────────
+
+interface RunSessionCoreOptions {
+  mode: 'plan' | 'edit';
+  prompt: unknown;
+  claudeSessionId?: string;
+  cwd: string | null;
+  inWorktree: boolean;
+  imageCount: number;
+  captureResult: boolean;
+  finalStatus: SessionStatus;
+}
+
+async function runSessionCore(id: string, opts: RunSessionCoreOptions): Promise<void> {
+  const session = store.getSession(id);
+  await runWithController(id, async (controller) => {
+    const stream = query({
+      prompt: opts.prompt as any,
+      options: buildQueryOptions(id, opts.mode, session?.sandbox ?? "none", opts.cwd, opts.inWorktree, {
+        claudeSessionId: opts.claudeSessionId,
+        model: session?.model,
+        effort: session?.effort,
+        abortController: controller,
+      }),
+    });
+    await runQueryStream(id, stream, opts.imageCount, { captureResult: opts.captureResult });
+    if (controller.signal.aborted) return;
+    store.setStatus(id, opts.finalStatus);
+  });
+}
+
 // ── Session runners (exported) ───────────────────────────────────────────────
 
 export async function planSession(id: string, prompt: string, cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
@@ -409,20 +440,10 @@ export async function planSession(id: string, prompt: string, cwd: string | null
   store.setStatus(id, "planning");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  const session = store.getSession(id);
-  await runWithController(id, async (controller) => {
-    // Planning phase always uses "plan" mode regardless of sandbox setting
-    const stream = query({
-      prompt: promptArg as any,
-      options: buildQueryOptions(id, 'plan', session?.sandbox ?? "none", effectiveCwd, useWorktree, {
-        model: session?.model,
-        effort: session?.effort,
-        abortController: controller,
-      }),
-    });
-    await runQueryStream(id, stream, rawImages.length, {});
-    if (controller.signal.aborted) return;
-    store.setStatus(id, "awaiting_approval");
+  const inWorktree = !!store.getSession(id)?.worktreePath;
+  await runSessionCore(id, {
+    mode: 'plan', prompt: promptArg, cwd: effectiveCwd, inWorktree,
+    imageCount: rawImages.length, captureResult: false, finalStatus: "awaiting_approval",
   });
 }
 
@@ -430,19 +451,10 @@ export async function revisePlanSession(id: string, feedback: string, claudeSess
   console.log(`[revisePlanSession] id=${id}`);
   store.setStatus(id, "planning");
   store.appendChat(id, { type: "user", text: feedback, ts: new Date().toISOString() });
-  const session = store.getSession(id);
-  const inWorktree = !!session?.worktreePath;
-  await runWithController(id, async (controller) => {
-    // Planning phase always uses "plan" mode regardless of sandbox setting
-    const stream = query({
-      prompt: feedback,
-      options: buildQueryOptions(id, 'plan', session?.sandbox ?? "none", cwd, inWorktree, {
-        claudeSessionId, model: session?.model, effort: session?.effort, abortController: controller,
-      }),
-    });
-    await runQueryStream(id, stream, 0, {});
-    if (controller.signal.aborted) return;
-    store.setStatus(id, "awaiting_approval");
+  const inWorktree = !!store.getSession(id)?.worktreePath;
+  await runSessionCore(id, {
+    mode: 'plan', prompt: feedback, claudeSessionId, cwd, inWorktree,
+    imageCount: 0, captureResult: false, finalStatus: "awaiting_approval",
   });
 }
 
@@ -450,39 +462,21 @@ export async function directExecuteSession(id: string, prompt: string, cwd: stri
   console.log(`[directExecuteSession] id=${id}`);
   store.setStatus(id, "running");
   const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
-  const session = store.getSession(id);
-  const sandbox = session?.sandbox ?? "none";
-  const inWorktree = !!session?.worktreePath;
   const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  await runWithController(id, async (controller) => {
-    const stream = query({
-      prompt: promptArg as any,
-      options: buildQueryOptions(id, 'edit', sandbox, effectiveCwd, inWorktree, {
-        model: session?.model, effort: session?.effort, abortController: controller,
-      }),
-    });
-    await runQueryStream(id, stream, rawImages.length, { captureResult: true });
-    if (controller.signal.aborted) return;
-    store.setStatus(id, "completed");
+  const inWorktree = !!store.getSession(id)?.worktreePath;
+  await runSessionCore(id, {
+    mode: 'edit', prompt: promptArg, cwd: effectiveCwd, inWorktree,
+    imageCount: rawImages.length, captureResult: true, finalStatus: "completed",
   });
 }
 
 export async function executeSession(id: string, claudeSessionId: string, cwd: string | null): Promise<void> {
   console.log(`[executeSession] id=${id}`);
   store.setStatus(id, "running");
-  const session = store.getSession(id);
-  const sandbox = session?.sandbox ?? "none";
-  const inWorktree = !!session?.worktreePath;
-  await runWithController(id, async (controller) => {
-    const stream = query({
-      prompt: "The plan has been approved. Proceed with execution now.",
-      options: buildQueryOptions(id, 'edit', sandbox, cwd, inWorktree, {
-        claudeSessionId, model: session?.model, effort: session?.effort, abortController: controller,
-      }),
-    });
-    await runQueryStream(id, stream, 0, { captureResult: true });
-    if (controller.signal.aborted) return;
-    store.setStatus(id, "completed");
+  const inWorktree = !!store.getSession(id)?.worktreePath;
+  await runSessionCore(id, {
+    mode: 'edit', prompt: "The plan has been approved. Proceed with execution now.",
+    claudeSessionId, cwd, inWorktree, imageCount: 0, captureResult: true, finalStatus: "completed",
   });
 }
 
@@ -498,21 +492,10 @@ export async function followUpSession(id: string, prompt: string, claudeSessionI
       store.appendChat(id, { type: "image", mediaType: rawImages[i].mediaType, url: urls[i], ts: new Date().toISOString() });
     }
   }
-  const promptArg = rawImages.length > 0
-    ? makePrompt(prompt, rawImages, followupId)
-    : prompt;
-  const session = store.getSession(id);
-  const sandbox = session?.sandbox ?? "none";
-  const inWorktree = !!session?.worktreePath;
-  await runWithController(id, async (controller) => {
-    const stream = query({
-      prompt: promptArg as any,
-      options: buildQueryOptions(id, 'edit', sandbox, cwd, inWorktree, {
-        claudeSessionId: claudeSessionId ?? undefined, model: session?.model, effort: session?.effort, abortController: controller,
-      }),
-    });
-    await runQueryStream(id, stream, 0, { captureResult: true });
-    if (controller.signal.aborted) return;
-    store.setStatus(id, "completed");
+  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, followupId) : prompt;
+  const inWorktree = !!store.getSession(id)?.worktreePath;
+  await runSessionCore(id, {
+    mode: 'edit', prompt: promptArg, claudeSessionId: claudeSessionId ?? undefined,
+    cwd, inWorktree, imageCount: 0, captureResult: true, finalStatus: "completed",
   });
 }
