@@ -106,8 +106,8 @@ Bun.serve({
 
       const stream = new ReadableStream({
         start(controller) {
-          // Bootstrap the client with the full current session list
-          const snapshot = store.listSessions();
+          // Bootstrap the client with active sessions + archived count
+          const snapshot = { sessions: store.listSessions(), archivedCount: store.countArchivedSessions() };
           controller.enqueue(sseEncoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
 
           // Forward every store mutation as a typed SSE event
@@ -149,7 +149,11 @@ Bun.serve({
     // ── Sessions ───────────────────────────────────────────────────────────
 
     "/sessions": {
-      GET: () => Response.json(store.listSessions()),
+      GET: (req) => {
+        const url = new URL(req.url);
+        const includeArchived = url.searchParams.get("archived") === "true";
+        return Response.json(store.listSessions(includeArchived));
+      },
       POST: async (req) => {
         const parsed = await parseBody(req, CreateSessionSchema);
         if (parsed instanceof Response) return parsed;
