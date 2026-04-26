@@ -2,7 +2,7 @@ export type SessionStatus = "pending" | "planning" | "awaiting_approval" | "awai
 
 export type SessionMode = "auto" | "plan" | "edit";
 export type SessionEffort = "low" | "medium" | "high" | "max";
-export type SandboxMode = "none" | "sandbox" | "docker" | "approval";
+export type SandboxMode = "none" | "sandbox" | "docker";
 
 export type ChatEntry =
   | { type: "text"; text: string; ts: string }

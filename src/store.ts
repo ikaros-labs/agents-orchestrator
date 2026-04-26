@@ -72,7 +72,7 @@ export function loadStore(): void {
       // Migrate sessions created before title generation
       if (session.title === undefined) session.title = null;
       // Migrate sessions created before sandbox support
-      if ((session as any).sandbox === undefined) (session as any).sandbox = "approval";
+      if ((session as any).sandbox === undefined) (session as any).sandbox = "sandbox";
       // Migrate log → chat field rename
       if ((session as any).log !== undefined && (session as any).chat === undefined) {
         (session as any).chat = (session as any).log;

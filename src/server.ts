@@ -5,7 +5,7 @@ import * as sessions from "./sessions.ts";
 import { removeWorktree } from "./worktree.ts";
 import { generateTitle } from "./title.ts";
 import { CreateSessionSchema, ApproveSessionSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
-import type { SessionMode, SandboxMode } from "./types.ts";
+import type { Session, SessionMode, SandboxMode } from "./types.ts";
 
 const sseEncoder = new TextEncoder();
 
@@ -20,6 +20,13 @@ const HOST = process.env.HOST ?? "localhost";
 
 function jsonError(status: number, message: string): Response {
   return Response.json({ error: message }, { status });
+}
+
+function withSession(req: Request, fn: (id: string, session: Session) => Response | Promise<Response>): Response | Promise<Response> {
+  const { id } = (req as any).params;
+  const session = store.getSession(id);
+  if (!session) return jsonError(404, "Session not found");
+  return fn(id, session);
 }
 
 /**
@@ -138,94 +145,68 @@ Bun.serve({
 
     // ── Sessions ───────────────────────────────────────────────────────────
 
-    "/sessions": async (req) => {
-      if (req.method === "GET") {
-        return Response.json(store.listSessions());
-      }
-
-      if (req.method === "POST") {
+    "/sessions": {
+      GET: () => Response.json(store.listSessions()),
+      POST: async (req) => {
         const parsed = await parseBody(req, CreateSessionSchema);
         if (parsed instanceof Response) return parsed;
         const { prompt, cwd = null, useWorktree, images: rawImages, mode, model, effort, sandbox } = parsed.data;
 
         const id = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
 
-        // Build InputFile refs (filenames will be <index>.<ext>)
         const inputImageRefs = rawImages.map((img, i) => ({
           mediaType: img.mediaType,
           filename: `${i}.${sessions.MEDIA_TYPE_EXT[img.mediaType] ?? "bin"}`,
         }));
 
-        store.createSession(id, prompt, cwd, inputImageRefs, mode as SessionMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
+        const session = store.createSession(id, prompt, cwd, inputImageRefs, mode as SessionMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
         generateTitle(prompt, rawImages).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
-          Promise.resolve().then(() => sessions.directExecuteSession(id, prompt, cwd, rawImages, useWorktree));
+          queueMicrotask(() => sessions.executeSession(session, { prompt, rawImages }));
         } else {
-          // "auto" and "plan" both use the planning flow
-          Promise.resolve().then(() => sessions.planSession(id, prompt, cwd, rawImages, useWorktree));
+          queueMicrotask(() => sessions.executeSession(session, { prompt, rawImages }));
         }
 
         return Response.json({ id, status: "pending" }, { status: 202 });
-      }
-
-      return new Response("Method Not Allowed", { status: 405 });
+      },
     },
 
     // ── Single session ─────────────────────────────────────────────────────
 
-    "/sessions/:id": (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
-      return Response.json(session);
-    },
+    "/sessions/:id": (req) => withSession(req, (_, session) => Response.json(session)),
 
     // ── Plan approval lifecycle ────────────────────────────────────────────
 
-    "/sessions/:id/approve": async (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
+    "/sessions/:id/approve": async (req) => withSession(req, async (id, session) => {
       if (session.status !== "awaiting_approval") return jsonError(409, "Session is not awaiting approval");
       if (!session.claudeSessionId) return jsonError(500, "No Claude session ID from planning phase");
       const parsed = await parseBody(req, ApproveSessionSchema);
       if (!(parsed instanceof Response) && parsed.data.model) {
         store.setModel(id, parsed.data.model);
       }
-      store.setMode(id, "edit");
-      Promise.resolve().then(() => sessions.executeSession(id, session.claudeSessionId!, session.worktreePath ?? session.cwd));
+      queueMicrotask(() => sessions.executeApprovedSession(store.getSession(id)!));
       return Response.json({ id, status: "running" }, { status: 202 });
-    },
+    }),
 
-    "/sessions/:id/reject": (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
+    "/sessions/:id/reject": (req) => withSession(req, (id, session) => {
       if (session.status !== "awaiting_approval") return jsonError(409, "Session is not awaiting approval");
       store.setError(id, "Rejected by user");
       store.setStatus(id, "failed");
       return Response.json({ id, status: "failed" });
-    },
+    }),
 
-    "/sessions/:id/revise": async (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
+    "/sessions/:id/revise": async (req) => withSession(req, async (id, session) => {
       if (session.status !== "awaiting_approval") return jsonError(409, "Session is not awaiting approval");
       if (!session.claudeSessionId) return jsonError(500, "No Claude session ID available for revision");
       const parsed = await parseBody(req, ReviseSchema);
       if (parsed instanceof Response) return parsed;
-      Promise.resolve().then(() => sessions.revisePlanSession(id, parsed.data.prompt, session.claudeSessionId!, session.worktreePath ?? session.cwd));
+      queueMicrotask(() => sessions.followUpSession(session, { prompt: parsed.data.prompt, rawImages: [] }));
       return Response.json({ id, status: "planning" }, { status: 202 });
-    },
+    }),
 
     // ── Tool approval ──────────────────────────────────────────────────────
 
-    "/sessions/:id/approve-tool": async (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
-      if (session.sandbox !== "approval") return jsonError(409, "Session does not use approval mode");
+    "/sessions/:id/approve-tool": async (req) => withSession(req, async (id, session) => {
       if (session.status !== "awaiting_tool_approval") return jsonError(409, "Session is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;
@@ -238,13 +219,9 @@ Bun.serve({
       if (session.pendingTools.length === 0) store.setStatus(id, "running");
       sessions.resolveToolApproval(id, toolUseID, { behavior: "allow", updatedInput: approvedInput });
       return Response.json({ id, status: session.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" }, { status: 202 });
-    },
+    }),
 
-    "/sessions/:id/reject-tool": async (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
-      if (session.sandbox !== "approval") return jsonError(409, "Session does not use approval mode");
+    "/sessions/:id/reject-tool": async (req) => withSession(req, async (id, session) => {
       if (session.status !== "awaiting_tool_approval") return jsonError(409, "Session is not awaiting tool approval");
       const parsed = await parseBody(req, ToolActionSchema);
       if (parsed instanceof Response) return parsed;
@@ -256,14 +233,11 @@ Bun.serve({
       if (session.pendingTools.length === 0) store.setStatus(id, "running");
       sessions.resolveToolApproval(id, toolUseID, { behavior: "deny", message: reason?.trim() || "User denied this tool call" });
       return Response.json({ id, status: session.pendingTools.length === 0 ? "running" : "awaiting_tool_approval" });
-    },
+    }),
 
     // ── AskUserQuestion ────────────────────────────────────────────────────
 
-    "/sessions/:id/answer-question": async (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
+    "/sessions/:id/answer-question": async (req) => withSession(req, async (id, session) => {
       if (session.status !== "awaiting_user_question") return jsonError(409, "Session is not awaiting a user question");
       const askToolEntry = session.pendingTools.find(t => t.name === "AskUserQuestion");
       if (!askToolEntry) return jsonError(500, "No AskUserQuestion tool found in pending tools");
@@ -272,7 +246,6 @@ Bun.serve({
       if (parsed instanceof Response) return parsed;
       const { answers } = parsed.data;
       const questions = ((askToolEntry.input as any)?.questions) ?? [];
-      // Log answers to the session feed so they're visible in the conversation
       const ts = new Date().toISOString();
       const answerText = (questions as any[]).map((q: any) => {
         const ans = answers[q.question] ?? "(no answer)";
@@ -280,55 +253,42 @@ Bun.serve({
       }).join("\n\n");
       if (answerText) store.appendChat(id, { type: "user", text: answerText, ts });
       store.removePendingTool(id, askToolEntry.toolUseID);
-      // Return to "planning" if we haven't produced a plan yet, otherwise "running"
       store.setStatus(id, session.mode === "plan" ? "planning" : "running");
       sessions.resolveToolApproval(id, askToolEntry.toolUseID, { behavior: "allow", updatedInput: { questions, answers } });
       return Response.json({ id, status: "running" }, { status: 202 });
-    },
+    }),
 
     // ── Stop ───────────────────────────────────────────────────────────────
 
-    "/sessions/:id/stop": (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
+    "/sessions/:id/stop": (req) => withSession(req, (id) => {
       if (!sessions.stopSession(id)) return Response.json({ id, message: "nothing to stop" });
       return Response.json({ id, status: "stopped" });
-    },
+    }),
 
     // ── Archive ────────────────────────────────────────────────────────────
 
-    "/sessions/:id/archive": (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
+    "/sessions/:id/archive": (req) => withSession(req, (id, session) => {
       store.setArchived(id, true);
       if (session.worktreePath) removeWorktree(session);
       return Response.json({ ok: true });
-    },
+    }),
 
-    "/sessions/:id/unarchive": (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
+    "/sessions/:id/unarchive": (req) => withSession(req, (id) => {
       store.setArchived(id, false);
       return Response.json({ ok: true });
-    },
+    }),
 
     // ── Follow-up ──────────────────────────────────────────────────────────
 
-    "/sessions/:id/followup": async (req) => {
-      const { id } = req.params;
-      const session = store.getSession(id);
-      if (!session) return jsonError(404, "Session not found");
+    "/sessions/:id/followup": async (req) => withSession(req, async (id, session) => {
       if (session.status !== "completed" && session.status !== "failed" && session.status !== "stopped") return jsonError(409, "Session is not completed");
       if (!session.claudeSessionId && session.status !== "stopped") return jsonError(500, "No Claude session ID available for follow-up");
       const parsed = await parseBody(req, FollowUpSchema);
       if (parsed instanceof Response) return parsed;
       const { prompt, images: rawImages } = parsed.data;
-      Promise.resolve().then(() => sessions.followUpSession(id, prompt, session.claudeSessionId, session.worktreePath ?? session.cwd, rawImages));
+      queueMicrotask(() => sessions.followUpSession(session, { prompt, rawImages }));
       return Response.json({ id, status: "running" }, { status: 202 });
-    },
+    }),
   },
 
   fetch() {
