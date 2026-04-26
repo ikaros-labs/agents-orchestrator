@@ -8,6 +8,9 @@ import * as store from "./store.ts";
 import type { Session, SessionEffort, SandboxMode, SessionStatus } from "./types.ts";
 import { jobStderr, makeStderrCapturingSpawner, makeDockerSpawner } from "./spawners.ts";
 import { resolveEffectiveCwd } from "./worktree.ts";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("sessions");
 
 // ── Active session AbortControllers ──────────────────────────────────────────
 // One AbortController per running session. Used by stopSession() to cancel the SDK query.
@@ -184,7 +187,7 @@ export function hasPendingApproval(id: string, toolUseID: string): boolean {
  * was found, true on success.
  */
 export function resolveToolApproval(id: string, toolUseID: string, result: PermissionResult): boolean {
-  console.log(`[resolveToolApproval] id=${id} toolUseID=${toolUseID} result=${JSON.stringify(result)}`);
+  log.info({ id, toolUseID, result }, "resolving tool approval");
   const sessionApprovals = pendingToolApprovals.get(id);
   const pending = sessionApprovals?.get(toolUseID);
   if (!pending) return false;
@@ -236,7 +239,7 @@ function makeCanUseTool(id: string): CanUseTool {
     }
 
     store.addPendingTool(id, toolUseID, toolName, input, agentID);
-    console.log(`[canUseTool] id=${id} tool=${toolName} toolUseID=${toolUseID} → awaiting approval`);
+    log.info({ id, tool: toolName, toolUseID }, "tool awaiting approval");
 
     const session = store.getSession(id);
     if (session && session.status !== "awaiting_tool_approval" && session.status !== "awaiting_user_question") {
@@ -432,7 +435,7 @@ async function runSessionCore(session: Session, opts: RunSessionCoreOptions): Pr
 }
 
 export async function executeSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
-  console.log(`[executeSession] id=${session.id}`);
+  log.info({ id: session.id }, "executing session");
   store.setStatus(session.id, session.mode === "auto" || session.mode === "plan" ? "planning" : "running");
   await resolveEffectiveCwd(session.id, session.cwd, session.useWorktree);
   const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, session.id) : userInput.prompt;
@@ -457,7 +460,7 @@ export async function executeApprovedSession(session: Session): Promise<void> {
 }
 
 export async function followUpSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
-  console.log(`[followUpSession] id=${session.id}`);
+  log.info({ id: session.id }, "follow-up session");
   const isEdit = session.mode === 'edit';
   store.setStatus(session.id, isEdit ? "running" : "planning");
   if (isEdit) store.clearResult(session.id);

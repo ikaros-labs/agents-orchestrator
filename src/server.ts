@@ -6,6 +6,9 @@ import { removeWorktree } from "./worktree.ts";
 import { generateTitle } from "./title.ts";
 import { CreateSessionSchema, ApproveSessionSchema, ReviseSchema, ToolActionSchema, AnswerQuestionSchema, FollowUpSchema } from "./schemas.ts";
 import type { Session, SessionMode, SandboxMode } from "./types.ts";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("server");
 
 const sseEncoder = new TextEncoder();
 
@@ -214,7 +217,7 @@ Bun.serve({
       if (!sessions.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
       const pendingTool = session.pendingTools.find(t => t.toolUseID === toolUseID);
       const approvedInput = pendingTool?.input ?? {};
-      console.log(`[approve-tool] id=${id} tool=${pendingTool?.name} toolUseID=${toolUseID} → granted`);
+      log.info({ id, tool: pendingTool?.name, toolUseID }, "tool approved");
       store.removePendingTool(id, toolUseID);
       if (session.pendingTools.length === 0) store.setStatus(id, "running");
       sessions.resolveToolApproval(id, toolUseID, { behavior: "allow", updatedInput: approvedInput });
@@ -228,7 +231,7 @@ Bun.serve({
       const { toolUseID, reason } = parsed.data;
       if (!sessions.hasPendingApproval(id, toolUseID)) return jsonError(404, "No pending tool approval found for that toolUseID");
       const pendingTool = session.pendingTools.find(t => t.toolUseID === toolUseID);
-      console.log(`[reject-tool] id=${id} tool=${pendingTool?.name} toolUseID=${toolUseID} → denied`);
+      log.info({ id, tool: pendingTool?.name, toolUseID }, "tool rejected");
       store.removePendingTool(id, toolUseID);
       if (session.pendingTools.length === 0) store.setStatus(id, "running");
       sessions.resolveToolApproval(id, toolUseID, { behavior: "deny", message: reason?.trim() || "User denied this tool call" });
@@ -296,4 +299,4 @@ Bun.serve({
   },
 });
 
-console.log(`Listening on http://${HOST}:${PORT}`);
+log.info({ host: HOST, port: PORT }, "Listening");

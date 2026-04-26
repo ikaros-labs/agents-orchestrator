@@ -1,6 +1,9 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { homedir } from "node:os";
 import type { SpawnedProcess, SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("spawners");
 
 // ── Stderr capture ────────────────────────────────────────────────────────────
 // Wraps the default spawn to capture stderr from the Claude Code CLI process.
@@ -14,7 +17,7 @@ function attachStderrCapture(jobId: string, proc: ReturnType<typeof nodeSpawn>, 
   proc.stderr?.on("data", (chunk: Buffer) => {
     const text = chunk.toString().trim();
     if (text) {
-      console.error(`[${label}] job=${jobId}: ${text}`);
+      log.error({ jobId, label, text }, "stderr");
       const lines = jobStderr.get(jobId)!;
       lines.push(text);
       // Keep only last 20 lines

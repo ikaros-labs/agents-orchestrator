@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import * as store from "./store.ts";
 import type { Session } from "./types.ts";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("worktree");
 
 const execFileAsync = promisify(execFile);
 
@@ -37,9 +40,9 @@ export async function removeWorktree(job: Session): Promise<void> {
   const { id, worktreePath } = job;
   try {
     await execFileAsync("git", ["worktree", "remove", "--force", worktreePath]);
-    console.log(`[worktree] removed for job ${id}: ${worktreePath}`);
+    log.info({ id, worktreePath }, "worktree removed");
   } catch (err) {
-    console.warn(`[worktree] failed to remove worktree for job ${id}: ${err}`);
+    log.warn({ id, err }, "failed to remove worktree");
   }
 }
 
@@ -54,10 +57,10 @@ export async function resolveEffectiveCwd(id: string, cwd: string | null, useWor
   try {
     const worktreePath = await createWorktree(cwd, id);
     store.setWorktreePath(id, worktreePath);
-    console.log(`[worktree] created for job ${id}: ${worktreePath}`);
+    log.info({ id, worktreePath }, "worktree created");
     return worktreePath;
   } catch (err) {
-    console.warn(`[worktree] failed to create worktree for job ${id} (falling back to cwd): ${err}`);
+    log.warn({ id, err }, "failed to create worktree, falling back to cwd");
     return cwd;
   }
 }
