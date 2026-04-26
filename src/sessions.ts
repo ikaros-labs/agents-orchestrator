@@ -1,16 +1,32 @@
-import { query, createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
 import { homedir } from "node:os";
+import { basename, extname, join } from "node:path";
+import type {
+  CanUseTool,
+  PermissionResult,
+} from "@anthropic-ai/claude-agent-sdk";
+import {
+  createSdkMcpServer,
+  query,
+  tool,
+} from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import logger from "./logger.ts";
+import {
+  jobStderr,
+  makeDockerSpawner,
+  makeStderrCapturingSpawner,
+} from "./spawners.ts";
 import * as store from "./store.ts";
-import type { Session, SessionEffort, SandboxMode, SessionStatus } from "./types.ts";
-import { jobStderr, makeStderrCapturingSpawner, makeDockerSpawner } from "./spawners.ts";
+import type {
+  SandboxMode,
+  Session,
+  SessionEffort,
+  SessionStatus,
+} from "./types.ts";
 import { resolveEffectiveCwd } from "./worktree.ts";
-import logger from './logger.ts';
 
-const log = logger.child({ component: 'sessions' });
+const log = logger.child({ component: "sessions" });
 
 // ── Active session AbortControllers ──────────────────────────────────────────
 // One AbortController per running session. Used by stopSession() to cancel the SDK query.
@@ -19,7 +35,8 @@ const activeControllers = new Map<string, AbortController>();
 
 // ── Directory constants ──────────────────────────────────────────────────────
 
-const AGENT_DIR = process.env.AGENT_ORCHESTRATOR_DIR ?? join(homedir(), ".agent-orchestrator");
+const AGENT_DIR =
+  process.env.AGENT_ORCHESTRATOR_DIR ?? join(homedir(), ".agent-orchestrator");
 export const LOGS_DIR = join(AGENT_DIR, "logs");
 export const IMAGES_DIR = join(AGENT_DIR, "files");
 await mkdir(LOGS_DIR, { recursive: true });
@@ -27,7 +44,12 @@ await mkdir(IMAGES_DIR, { recursive: true });
 
 // ── Media type helpers ───────────────────────────────────────────────────────
 
-export const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+export const IMAGE_MEDIA_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
 export const DOCUMENT_MEDIA_TYPES = new Set([
   "application/pdf",
   "text/plain",
@@ -36,7 +58,10 @@ export const DOCUMENT_MEDIA_TYPES = new Set([
   "text/xml",
   "application/xml",
 ]);
-export const ALLOWED_MEDIA_TYPES = new Set([...IMAGE_MEDIA_TYPES, ...DOCUMENT_MEDIA_TYPES]);
+export const ALLOWED_MEDIA_TYPES = new Set([
+  ...IMAGE_MEDIA_TYPES,
+  ...DOCUMENT_MEDIA_TYPES,
+]);
 
 export const MEDIA_TYPE_EXT: Record<string, string> = {
   "image/png": "png",
@@ -54,10 +79,15 @@ export const MEDIA_TYPE_EXT: Record<string, string> = {
 // ── AttachFiles MCP tool ─────────────────────────────────────────────────────
 
 const EXT_TO_MIME: Record<string, string> = {
-  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-  gif: "image/gif", webp: "image/webp",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
   pdf: "application/pdf",
-  mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
 };
 
 function makeAttachFilesServer(sessionId: string) {
@@ -68,7 +98,9 @@ function makeAttachFilesServer(sessionId: string) {
         "attach_files",
         `Expose local files so the user can view or download them. Returns a public URL for each file.
 Use the returned URLs in your markdown response — inline images with ![alt](url), download links with [filename](url).`,
-        { paths: z.array(z.string()).describe("Absolute file paths to expose") },
+        {
+          paths: z.array(z.string()).describe("Absolute file paths to expose"),
+        },
         async ({ paths }) => {
           const results: string[] = [];
           for (const filePath of paths) {
@@ -77,10 +109,14 @@ Use the returned URLs in your markdown response — inline images with ![alt](ur
             const dir = `${IMAGES_DIR}/${sessionId}`;
             await mkdir(dir, { recursive: true });
             await writeFile(`${dir}/${filename}`, await readFile(filePath));
-            results.push(`${basename(filePath)}: /images/${sessionId}/${filename}`);
+            results.push(
+              `${basename(filePath)}: /images/${sessionId}/${filename}`,
+            );
           }
-          return { content: [{ type: "text" as const, text: results.join("\n") }] };
-        }
+          return {
+            content: [{ type: "text" as const, text: results.join("\n") }],
+          };
+        },
       ),
     ],
   });
@@ -96,7 +132,10 @@ You are running inside a git worktree that has already been set up for you.
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export interface RawImage { mediaType: string; data: string }
+export interface RawImage {
+  mediaType: string;
+  data: string;
+}
 
 function worktreeSystemPrompt(inWorktree: boolean) {
   if (!inWorktree) return {};
@@ -117,15 +156,20 @@ function worktreeSystemPrompt(inWorktree: boolean) {
 
 function buildQueryOptions(
   id: string,
-  mode: 'plan' | 'edit',
+  mode: "plan" | "edit",
   sandbox: SandboxMode,
   cwd: string | null,
   inWorktree: boolean,
-  opts: { claudeSessionId?: string; model?: string | null; effort?: SessionEffort | null; abortController: AbortController },
+  opts: {
+    claudeSessionId?: string;
+    model?: string | null;
+    effort?: SessionEffort | null;
+    abortController: AbortController;
+  },
 ): Record<string, any> {
   const base = {
     tools: { type: "preset" as const, preset: "claude_code" as const },
-    permissionMode: mode === 'plan' ? 'plan' : 'acceptEdits' as const,
+    permissionMode: mode === "plan" ? "plan" : ("acceptEdits" as const),
     settingSources: ["user", "project", "local"] as const,
     mcpServers: { orchestrator: makeAttachFilesServer(id) },
     abortController: opts.abortController,
@@ -138,7 +182,7 @@ function buildQueryOptions(
     ...(cwd ? { cwd } : {}),
   };
 
-  if (mode === 'plan') {
+  if (mode === "plan") {
     return base;
   }
 
@@ -175,7 +219,10 @@ function buildQueryOptions(
 // in-flight simultaneously. The approve/reject endpoints resolve each by
 // toolUseID, unblocking the specific agent call that was waiting.
 
-const pendingToolApprovals = new Map<string, Map<string, { resolve: (d: PermissionResult) => void }>>();
+const pendingToolApprovals = new Map<
+  string,
+  Map<string, { resolve: (d: PermissionResult) => void }>
+>();
 
 /** Returns true if a pending resolver exists for this session + toolUseID. */
 export function hasPendingApproval(id: string, toolUseID: string): boolean {
@@ -186,8 +233,12 @@ export function hasPendingApproval(id: string, toolUseID: string): boolean {
  * Resolves (and removes) a pending tool approval. Returns false if no resolver
  * was found, true on success.
  */
-export function resolveToolApproval(id: string, toolUseID: string, result: PermissionResult): boolean {
-  log.info({ id, toolUseID, result }, 'tool approval resolved');
+export function resolveToolApproval(
+  id: string,
+  toolUseID: string,
+  result: PermissionResult,
+): boolean {
+  log.info({ id, toolUseID, result }, "tool approval resolved");
   const sessionApprovals = pendingToolApprovals.get(id);
   const pending = sessionApprovals?.get(toolUseID);
   if (!pending) return false;
@@ -224,13 +275,20 @@ export function stopSession(id: string): boolean {
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 function makeCanUseTool(id: string): CanUseTool {
-  return async (toolName: string, input: Record<string, unknown>, options): Promise<PermissionResult> => {
+  return async (
+    toolName: string,
+    input: Record<string, unknown>,
+    options,
+  ): Promise<PermissionResult> => {
     const { toolUseID, agentID } = options;
 
     // Deny ExitPlanMode so the planning query ends cleanly here.
     // Execution is triggered separately via executeSession() once the user approves the plan.
     if (toolName === "ExitPlanMode") {
-      return { behavior: "deny", message: "Stop the execution. Awaiting plan approval from user." };
+      return {
+        behavior: "deny",
+        message: "Stop the execution. Awaiting plan approval from user.",
+      };
     }
 
     // Auto-approve attach_files — it only copies files for display, no confirmation needed.
@@ -239,11 +297,20 @@ function makeCanUseTool(id: string): CanUseTool {
     }
 
     store.addPendingTool(id, toolUseID, toolName, input, agentID);
-    log.info({ id, tool: toolName, toolUseID }, 'tool awaiting approval');
+    log.info({ id, tool: toolName, toolUseID }, "tool awaiting approval");
 
     const session = store.getSession(id);
-    if (session && session.status !== "awaiting_tool_approval" && session.status !== "awaiting_user_question") {
-      store.setStatus(id, toolName === "AskUserQuestion" ? "awaiting_user_question" : "awaiting_tool_approval");
+    if (
+      session &&
+      session.status !== "awaiting_tool_approval" &&
+      session.status !== "awaiting_user_question"
+    ) {
+      store.setStatus(
+        id,
+        toolName === "AskUserQuestion"
+          ? "awaiting_user_question"
+          : "awaiting_tool_approval",
+      );
     }
 
     if (!pendingToolApprovals.has(id)) {
@@ -268,7 +335,12 @@ function handleSessionError(id: string, err: unknown): void {
 }
 
 /** Save base64 image data to disk and return the server-relative URL. */
-async function saveImage(sessionId: string, index: number, mediaType: string, base64Data: string): Promise<string> {
+async function saveImage(
+  sessionId: string,
+  index: number,
+  mediaType: string,
+  base64Data: string,
+): Promise<string> {
   const ext = MEDIA_TYPE_EXT[mediaType] ?? "bin";
   const dir = `${IMAGES_DIR}/${sessionId}`;
   await mkdir(dir, { recursive: true });
@@ -286,29 +358,49 @@ async function runQueryStream(
   id: string,
   stream: AsyncIterable<any>,
   imageCounter: number,
-  opts: { captureResult?: boolean } = {}
+  opts: { captureResult?: boolean } = {},
 ): Promise<void> {
   // Maps tool_use_id → chat entry index so we can patch with output later
   const toolCallIndices = new Map<string, number>();
   for await (const message of stream) {
     const ts = new Date().toISOString();
-    await appendFile(`${LOGS_DIR}/${id}.ndjson`, JSON.stringify({ ts, ...message }) + "\n");
+    await appendFile(
+      `${LOGS_DIR}/${id}.ndjson`,
+      JSON.stringify({ ts, ...message }) + "\n",
+    );
     if (message.type === "assistant" && message.message?.content) {
       for (const block of message.message.content) {
         if ("text" in block) {
           store.appendChat(id, { type: "text", text: block.text, ts });
         } else if ("name" in block) {
           const toolUseId: string | undefined = (block as any).id;
-          store.appendChat(id, { type: "tool_call", name: block.name, input: (block as any).input, toolUseId, ts });
+          store.appendChat(id, {
+            type: "tool_call",
+            name: block.name,
+            input: (block as any).input,
+            toolUseId,
+            ts,
+          });
           if (toolUseId) {
             const session = store.getSession(id);
-            if (session) toolCallIndices.set(toolUseId, session.chat.length - 1);
+            if (session)
+              toolCallIndices.set(toolUseId, session.chat.length - 1);
           }
         } else if ((block as any).type === "image") {
           const b = block as any;
           if (b.source?.type === "base64") {
-            const url = await saveImage(id, imageCounter++, b.source.media_type, b.source.data);
-            store.appendChat(id, { type: "image", mediaType: b.source.media_type, url, ts });
+            const url = await saveImage(
+              id,
+              imageCounter++,
+              b.source.media_type,
+              b.source.data,
+            );
+            store.appendChat(id, {
+              type: "image",
+              mediaType: b.source.media_type,
+              url,
+              ts,
+            });
           }
         }
       }
@@ -319,8 +411,12 @@ async function runQueryStream(
           const index = toolCallIndices.get(toolUseId);
           if (index !== undefined) {
             const raw = (block as any).content;
-            const output = typeof raw === "string" ? raw
-              : Array.isArray(raw) ? raw.map((c: any) => c.text ?? "").join("") : "";
+            const output =
+              typeof raw === "string"
+                ? raw
+                : Array.isArray(raw)
+                  ? raw.map((c: any) => c.text ?? "").join("")
+                  : "";
             store.patchChat(id, index, { output });
           }
         }
@@ -333,7 +429,10 @@ async function runQueryStream(
       const u = message.usage;
       if (u) {
         store.addUsage(id, {
-          totalTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+          totalTokens:
+            (u.input_tokens ?? 0) +
+            (u.cache_read_input_tokens ?? 0) +
+            (u.cache_creation_input_tokens ?? 0),
           costUSD: message.total_cost_usd ?? 0,
         });
       }
@@ -342,7 +441,11 @@ async function runQueryStream(
 }
 
 /** Build a multimodal prompt iterable when files are provided; otherwise fall back to a plain string. */
-async function* makePrompt(prompt: string, rawImages: RawImage[], sessionId: string): AsyncIterable<any> {
+async function* makePrompt(
+  prompt: string,
+  rawImages: RawImage[],
+  sessionId: string,
+): AsyncIterable<any> {
   // Save files to disk and build content blocks (image or document depending on type)
   const contentBlocks = await Promise.all(
     rawImages.map(async (img, i) => {
@@ -366,16 +469,13 @@ async function* makePrompt(prompt: string, rawImages: RawImage[], sessionId: str
           },
         };
       }
-    })
+    }),
   );
   yield {
     type: "user" as const,
     message: {
       role: "user" as const,
-      content: [
-        ...contentBlocks,
-        { type: "text" as const, text: prompt },
-      ],
+      content: [...contentBlocks, { type: "text" as const, text: prompt }],
     },
     parent_tool_use_id: null,
   };
@@ -408,75 +508,126 @@ async function runWithController(
 // ── Session runner core ──────────────────────────────────────────────────────
 
 interface RunSessionCoreOptions {
-  mode: 'plan' | 'edit';
+  mode: "plan" | "edit";
   prompt: unknown;
   imageCount: number;
   captureResult: boolean;
   finalStatus: SessionStatus;
 }
 
-async function runSessionCore(session: Session, opts: RunSessionCoreOptions): Promise<void> {
+async function runSessionCore(
+  session: Session,
+  opts: RunSessionCoreOptions,
+): Promise<void> {
   const effectiveCwd = session.worktreePath ?? session.cwd;
   const inWorktree = !!session.worktreePath;
   await runWithController(session.id, async (controller) => {
     const stream = query({
       prompt: opts.prompt as any,
-      options: buildQueryOptions(session.id, opts.mode, session.sandbox ?? "none", effectiveCwd, inWorktree, {
-        claudeSessionId: session.claudeSessionId ?? undefined,
-        model: session.model,
-        effort: session.effort,
-        abortController: controller,
-      }),
+      options: buildQueryOptions(
+        session.id,
+        opts.mode,
+        session.sandbox ?? "none",
+        effectiveCwd,
+        inWorktree,
+        {
+          claudeSessionId: session.claudeSessionId ?? undefined,
+          model: session.model,
+          effort: session.effort,
+          abortController: controller,
+        },
+      ),
     });
-    await runQueryStream(session.id, stream, opts.imageCount, { captureResult: opts.captureResult });
+    await runQueryStream(session.id, stream, opts.imageCount, {
+      captureResult: opts.captureResult,
+    });
     if (controller.signal.aborted) return;
     store.setStatus(session.id, opts.finalStatus);
   });
 }
 
-export async function executeSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
-  log.info({ id: session.id }, 'execute session');
-  store.setStatus(session.id, session.mode === "auto" || session.mode === "plan" ? "planning" : "running");
+export async function executeSession(
+  session: Session,
+  userInput: { prompt: string; rawImages: RawImage[] },
+): Promise<void> {
+  log.info({ id: session.id }, "execute session");
+  store.setStatus(
+    session.id,
+    session.mode === "auto" || session.mode === "plan" ? "planning" : "running",
+  );
   await resolveEffectiveCwd(session.id, session.cwd, session.useWorktree);
-  const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, session.id) : userInput.prompt;
+  const promptArg =
+    userInput.rawImages.length > 0
+      ? makePrompt(userInput.prompt, userInput.rawImages, session.id)
+      : userInput.prompt;
 
   if (session.mode === "auto" || session.mode === "plan") {
     await runSessionCore(session, {
-        mode: 'plan', prompt: promptArg,
-        imageCount: userInput.rawImages.length, captureResult: false, finalStatus: "awaiting_approval",
+      mode: "plan",
+      prompt: promptArg,
+      imageCount: userInput.rawImages.length,
+      captureResult: false,
+      finalStatus: "awaiting_approval",
     });
     return;
   }
 
   await runSessionCore(session, {
-    mode: 'edit', prompt: promptArg,
-    imageCount: userInput.rawImages.length, captureResult: true, finalStatus: "completed",
+    mode: "edit",
+    prompt: promptArg,
+    imageCount: userInput.rawImages.length,
+    captureResult: true,
+    finalStatus: "completed",
   });
 }
 
 export async function executeApprovedSession(session: Session): Promise<void> {
   store.setMode(session.id, "edit");
-  await followUpSession(session, { prompt: "The plan has been approved. Proceed with execution now.", rawImages: [] });
+  await followUpSession(session, {
+    prompt: "The plan has been approved. Proceed with execution now.",
+    rawImages: [],
+  });
 }
 
-export async function followUpSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
-  log.info({ id: session.id }, 'follow up session');
-  const isEdit = session.mode === 'edit';
+export async function followUpSession(
+  session: Session,
+  userInput: { prompt: string; rawImages: RawImage[] },
+): Promise<void> {
+  log.info({ id: session.id }, "follow up session");
+  const isEdit = session.mode === "edit";
   store.setStatus(session.id, isEdit ? "running" : "planning");
   if (isEdit) store.clearResult(session.id);
-  store.appendChat(session.id, { type: "user", text: userInput.prompt, ts: new Date().toISOString() });
+  store.appendChat(session.id, {
+    type: "user",
+    text: userInput.prompt,
+    ts: new Date().toISOString(),
+  });
   const followupId = `${session.id}-followup-${Date.now()}`;
   if (userInput.rawImages.length > 0) {
-    const urls = await Promise.all(userInput.rawImages.map((img, i) => saveImage(followupId, i, img.mediaType, img.data)));
+    const urls = await Promise.all(
+      userInput.rawImages.map((img, i) =>
+        saveImage(followupId, i, img.mediaType, img.data),
+      ),
+    );
     for (let i = 0; i < userInput.rawImages.length; i++) {
-      store.appendChat(session.id, { type: "image", mediaType: userInput.rawImages[i].mediaType, url: urls[i], ts: new Date().toISOString() });
+      store.appendChat(session.id, {
+        type: "image",
+        mediaType: userInput.rawImages[i].mediaType,
+        url: urls[i],
+        ts: new Date().toISOString(),
+      });
     }
   }
-  const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, followupId) : userInput.prompt;
+  const promptArg =
+    userInput.rawImages.length > 0
+      ? makePrompt(userInput.prompt, userInput.rawImages, followupId)
+      : userInput.prompt;
 
   await runSessionCore(session, {
-    mode: isEdit ? 'edit' : 'plan',
+    mode: isEdit ? "edit" : "plan",
     prompt: promptArg,
-    imageCount: 0, captureResult: isEdit, finalStatus: isEdit ? "completed" : "awaiting_approval",
+    imageCount: 0,
+    captureResult: isEdit,
+    finalStatus: isEdit ? "completed" : "awaiting_approval",
   });
 }

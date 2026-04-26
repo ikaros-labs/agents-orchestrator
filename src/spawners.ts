@@ -1,9 +1,12 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { homedir } from "node:os";
-import type { SpawnedProcess, SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
-import logger from './logger.ts';
+import type {
+  SpawnedProcess,
+  SpawnOptions,
+} from "@anthropic-ai/claude-agent-sdk";
+import logger from "./logger.ts";
 
-const log = logger.child({ component: 'spawners' });
+const log = logger.child({ component: "spawners" });
 
 // ── Stderr capture ────────────────────────────────────────────────────────────
 // Wraps the default spawn to capture stderr from the Claude Code CLI process.
@@ -12,7 +15,11 @@ const log = logger.child({ component: 'spawners' });
 /** Stores recent stderr lines per job so we can surface them in error messages. */
 export const jobStderr = new Map<string, string[]>();
 
-function attachStderrCapture(jobId: string, proc: ReturnType<typeof nodeSpawn>, label = "stderr"): void {
+function attachStderrCapture(
+  jobId: string,
+  proc: ReturnType<typeof nodeSpawn>,
+  label = "stderr",
+): void {
   if (!jobStderr.has(jobId)) jobStderr.set(jobId, []);
   proc.stderr?.on("data", (chunk: Buffer) => {
     const text = chunk.toString().trim();
@@ -26,7 +33,9 @@ function attachStderrCapture(jobId: string, proc: ReturnType<typeof nodeSpawn>, 
   });
 }
 
-export function makeStderrCapturingSpawner(jobId: string): (opts: SpawnOptions) => SpawnedProcess {
+export function makeStderrCapturingSpawner(
+  jobId: string,
+): (opts: SpawnOptions) => SpawnedProcess {
   return (opts: SpawnOptions): SpawnedProcess => {
     const proc = nodeSpawn(opts.command, opts.args, {
       cwd: opts.cwd,
@@ -41,24 +50,37 @@ export function makeStderrCapturingSpawner(jobId: string): (opts: SpawnOptions) 
 
 // ── Docker spawner ────────────────────────────────────────────────────────────
 
-const DOCKER_IMAGE = process.env.AGENT_DOCKER_IMAGE ?? "agents-orchestrator-worker:latest";
+const DOCKER_IMAGE =
+  process.env.AGENT_DOCKER_IMAGE ?? "agents-orchestrator-worker:latest";
 
-export function makeDockerSpawner(jobId: string, cwd: string | null): (opts: SpawnOptions) => SpawnedProcess {
+export function makeDockerSpawner(
+  jobId: string,
+  cwd: string | null,
+): (opts: SpawnOptions) => SpawnedProcess {
   return (opts: SpawnOptions): SpawnedProcess => {
     const dockerArgs = [
-      "run", "--rm", "-i",
-      "--name", `agent-${jobId}`,
+      "run",
+      "--rm",
+      "-i",
+      "--name",
+      `agent-${jobId}`,
       // Security hardening
-      "--cap-drop", "ALL",
-      "--security-opt", "no-new-privileges",
+      "--cap-drop",
+      "ALL",
+      "--security-opt",
+      "no-new-privileges",
       // Resource limits
-      "--memory", "4g",
-      "--cpus", "2",
-      "--pids-limit", "200",
+      "--memory",
+      "4g",
+      "--cpus",
+      "2",
+      "--pids-limit",
+      "200",
       // Mount worktree
       ...(cwd ? ["-v", `${cwd}:${cwd}`] : []),
       // Mount session storage for resume support
-      "-v", `${homedir()}/.claude:/root/.claude`,
+      "-v",
+      `${homedir()}/.claude:/root/.claude`,
       // Pass environment
       ...Object.entries(opts.env)
         .filter(([, v]) => v !== undefined)
@@ -67,10 +89,13 @@ export function makeDockerSpawner(jobId: string, cwd: string | null): (opts: Spa
       ...(opts.cwd ? ["-w", opts.cwd] : []),
       // Image and command
       DOCKER_IMAGE,
-      opts.command, ...opts.args,
+      opts.command,
+      ...opts.args,
     ];
 
-    const proc = nodeSpawn("docker", dockerArgs, { stdio: ["pipe", "pipe", "pipe"] });
+    const proc = nodeSpawn("docker", dockerArgs, {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     attachStderrCapture(jobId, proc, "stderr:docker");
 
     // Wire abort signal to container stop

@@ -1,12 +1,22 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { homedir } from "node:os";
-import type { InputFile, Session, SessionEffort, SessionMode, SessionStatus, SessionUsage, ChatEntry, SandboxMode } from "./types.ts";
-import logger from './logger.ts';
+import { join } from "node:path";
+import logger from "./logger.ts";
+import type {
+  ChatEntry,
+  InputFile,
+  SandboxMode,
+  Session,
+  SessionEffort,
+  SessionMode,
+  SessionStatus,
+  SessionUsage,
+} from "./types.ts";
 
-const log = logger.child({ component: 'store' });
+const log = logger.child({ component: "store" });
 
-const AGENT_DIR = process.env.AGENT_ORCHESTRATOR_DIR ?? join(homedir(), ".agent-orchestrator");
+const AGENT_DIR =
+  process.env.AGENT_ORCHESTRATOR_DIR ?? join(homedir(), ".agent-orchestrator");
 const DATA_DIR = join(AGENT_DIR, "jobs");
 mkdirSync(DATA_DIR, { recursive: true });
 
@@ -16,7 +26,20 @@ const sessions = new Map<string, Session>();
 
 export type StoreEvent =
   | { type: "session_created"; job: Session }
-  | { type: "session_status"; jobId: string; status: SessionStatus; startedAt: string | null; finishedAt: string | null; result: string | null; error: string | null; claudeSessionId: string | null; pendingTools: Session["pendingTools"]; archived: boolean; usage: SessionUsage | null; title: string | null }
+  | {
+      type: "session_status";
+      jobId: string;
+      status: SessionStatus;
+      startedAt: string | null;
+      finishedAt: string | null;
+      result: string | null;
+      error: string | null;
+      claudeSessionId: string | null;
+      pendingTools: Session["pendingTools"];
+      archived: boolean;
+      usage: SessionUsage | null;
+      title: string | null;
+    }
   | { type: "chat_entry"; jobId: string; entry: ChatEntry; index: number };
 
 const subscribers = new Set<(e: StoreEvent) => void>();
@@ -27,7 +50,7 @@ export function subscribe(fn: (e: StoreEvent) => void): () => void {
 }
 
 function emit(e: StoreEvent): void {
-  subscribers.forEach(fn => fn(e));
+  subscribers.forEach((fn) => fn(e));
 }
 
 function emitSessionStatus(session: Session): void {
@@ -48,16 +71,25 @@ function emitSessionStatus(session: Session): void {
 }
 
 function persistSession(session: Session): void {
-  writeFileSync(`${DATA_DIR}/${session.id}.json`, JSON.stringify(session, null, 2));
+  writeFileSync(
+    `${DATA_DIR}/${session.id}.json`,
+    JSON.stringify(session, null, 2),
+  );
 }
 
-const TERMINAL_STATUSES = new Set<SessionStatus>(["completed", "failed", "stopped"]);
+const TERMINAL_STATUSES = new Set<SessionStatus>([
+  "completed",
+  "failed",
+  "stopped",
+]);
 
 export function loadStore(): void {
   for (const file of readdirSync(DATA_DIR)) {
     if (!file.endsWith(".json")) continue;
     try {
-      const session = JSON.parse(readFileSync(`${DATA_DIR}/${file}`, "utf8")) as Session;
+      const session = JSON.parse(
+        readFileSync(`${DATA_DIR}/${file}`, "utf8"),
+      ) as Session;
       // Migrate old single-pendingTool format to array
       if (!Array.isArray(session.pendingTools)) {
         session.pendingTools = [];
@@ -75,13 +107,20 @@ export function loadStore(): void {
       // Migrate sessions created before title generation
       if (session.title === undefined) session.title = null;
       // Migrate sessions created before sandbox support
-      if ((session as any).sandbox === undefined) (session as any).sandbox = "sandbox";
+      if ((session as any).sandbox === undefined)
+        (session as any).sandbox = "sandbox";
       // Migrate log → chat field rename
-      if ((session as any).log !== undefined && (session as any).chat === undefined) {
+      if (
+        (session as any).log !== undefined &&
+        (session as any).chat === undefined
+      ) {
         (session as any).chat = (session as any).log;
       }
       // Migrate sessionId → claudeSessionId field rename
-      if ((session as any).sessionId !== undefined && (session as any).claudeSessionId === undefined) {
+      if (
+        (session as any).sessionId !== undefined &&
+        (session as any).claudeSessionId === undefined
+      ) {
         (session as any).claudeSessionId = (session as any).sessionId;
       }
       sessions.set(session.id, session);
@@ -108,7 +147,17 @@ export function loadStore(): void {
   }
 }
 
-export function createSession(id: string, prompt: string, cwd: string | null = null, images: InputFile[] = [], mode: SessionMode = "auto", useWorktree: boolean = true, model: string | null = null, effort: SessionEffort | null = null, sandbox: SandboxMode = "none"): Session {
+export function createSession(
+  id: string,
+  prompt: string,
+  cwd: string | null = null,
+  images: InputFile[] = [],
+  mode: SessionMode = "auto",
+  useWorktree: boolean = true,
+  model: string | null = null,
+  effort: SessionEffort | null = null,
+  sandbox: SandboxMode = "none",
+): Session {
   const session: Session = {
     id,
     status: "pending",
@@ -145,7 +194,7 @@ export function getSession(id: string): Session | undefined {
 
 function getSessionOrWarn(id: string, caller: string): Session | undefined {
   const session = sessions.get(id);
-  if (!session) log.warn({ caller, id }, 'session not found');
+  if (!session) log.warn({ caller, id }, "session not found");
   return session;
 }
 
@@ -154,7 +203,8 @@ export function setStatus(id: string, status: SessionStatus): void {
   if (!session) return;
   session.status = status;
   if (status === "running") session.startedAt = new Date().toISOString();
-  if (status === "completed" || status === "failed" || status === "stopped") session.finishedAt = new Date().toISOString();
+  if (status === "completed" || status === "failed" || status === "stopped")
+    session.finishedAt = new Date().toISOString();
   persistSession(session);
   emitSessionStatus(session);
 }
@@ -164,17 +214,31 @@ export function appendChat(id: string, entry: ChatEntry): void {
   if (!session) return;
   session.chat.push(entry);
   persistSession(session);
-  emit({ type: "chat_entry", jobId: id, entry, index: session.chat.length - 1 });
+  emit({
+    type: "chat_entry",
+    jobId: id,
+    entry,
+    index: session.chat.length - 1,
+  });
 }
 
-export function patchChat(id: string, index: number, patch: Record<string, unknown>): void {
+export function patchChat(
+  id: string,
+  index: number,
+  patch: Record<string, unknown>,
+): void {
   const session = getSessionOrWarn(id, "patchChat");
   if (!session) return;
   const entry = session.chat[index];
   if (!entry) return;
   Object.assign(entry, patch);
   persistSession(session);
-  emit({ type: "chat_entry", jobId: id, entry: { ...entry } as ChatEntry, index });
+  emit({
+    type: "chat_entry",
+    jobId: id,
+    entry: { ...entry } as ChatEntry,
+    index,
+  });
 }
 
 export function setClaudeSessionId(id: string, claudeSessionId: string): void {
@@ -231,7 +295,13 @@ export function setError(id: string, error: string): void {
   emitSessionStatus(session);
 }
 
-export function addPendingTool(id: string, toolUseID: string, name: string, input: Record<string, unknown>, agentID?: string): void {
+export function addPendingTool(
+  id: string,
+  toolUseID: string,
+  name: string,
+  input: Record<string, unknown>,
+  agentID?: string,
+): void {
   const session = getSessionOrWarn(id, "addPendingTool");
   if (!session) return;
   session.pendingTools.push({ toolUseID, name, input, agentID });
@@ -242,7 +312,9 @@ export function addPendingTool(id: string, toolUseID: string, name: string, inpu
 export function removePendingTool(id: string, toolUseID: string): void {
   const session = getSessionOrWarn(id, "removePendingTool");
   if (!session) return;
-  session.pendingTools = session.pendingTools.filter(t => t.toolUseID !== toolUseID);
+  session.pendingTools = session.pendingTools.filter(
+    (t) => t.toolUseID !== toolUseID,
+  );
   persistSession(session);
   emitSessionStatus(session);
 }
@@ -279,14 +351,14 @@ export function addUsage(id: string, delta: SessionUsage): void {
 
 function getLatestUserMessageTime(session: Session): number {
   const times = session.chat
-    .filter(e => e.type === "user")
-    .map(e => new Date(e.ts).getTime());
+    .filter((e) => e.type === "user")
+    .map((e) => new Date(e.ts).getTime());
   return Math.max(new Date(session.createdAt).getTime(), ...times);
 }
 
 export function listSessions(includeArchived = false): Session[] {
   return Array.from(sessions.values())
-    .filter(s => includeArchived || !s.archived)
+    .filter((s) => includeArchived || !s.archived)
     .sort((a, b) => getLatestUserMessageTime(b) - getLatestUserMessageTime(a));
 }
 

@@ -9,7 +9,7 @@ export const DEFAULTS = {
 } as const;
 
 export const RawImageSchema = z.object({
-  mediaType: z.string().refine(mt => ALLOWED_MEDIA_TYPES.has(mt), {
+  mediaType: z.string().refine((mt) => ALLOWED_MEDIA_TYPES.has(mt), {
     message: `mediaType must be one of: ${[...ALLOWED_MEDIA_TYPES].join(", ")}`,
   }),
   data: z.string().min(1, "data must be a non-empty base64 string"),
@@ -22,8 +22,14 @@ export const CreateSessionSchema = z.object({
   images: z.array(RawImageSchema).default([]),
   mode: z.enum(["auto", "plan", "edit"]).optional().default(DEFAULTS.mode),
   model: z.string().optional().default(DEFAULTS.model),
-  effort: z.enum(["low", "medium", "high", "max"]).optional().default(DEFAULTS.effort),
-  sandbox: z.enum(["none", "sandbox", "docker"]).optional().default(DEFAULTS.sandbox),
+  effort: z
+    .enum(["low", "medium", "high", "max"])
+    .optional()
+    .default(DEFAULTS.effort),
+  sandbox: z
+    .enum(["none", "sandbox", "docker"])
+    .optional()
+    .default(DEFAULTS.sandbox),
 });
 
 export const ReviseSchema = z.object({

@@ -1,18 +1,19 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import logger from "./logger.ts";
 import * as store from "./store.ts";
 import type { Session } from "./types.ts";
-import logger from './logger.ts';
 
-const log = logger.child({ component: 'worktree' });
+const log = logger.child({ component: "worktree" });
 
 const execFileAsync = promisify(execFile);
 
 const AGENT_DIR = join(homedir(), ".agent-orchestrator");
-export const WORKTREES_DIR = process.env.AGENT_WORKTREES_DIR ?? join(AGENT_DIR, "worktrees");
+export const WORKTREES_DIR =
+  process.env.AGENT_WORKTREES_DIR ?? join(AGENT_DIR, "worktrees");
 
 /**
  * Creates a git worktree for a job at `WORKTREES_DIR/<jobId>` and returns the
@@ -22,12 +23,25 @@ export const WORKTREES_DIR = process.env.AGENT_WORKTREES_DIR ?? join(AGENT_DIR, 
  * git repository or if `git worktree add` fails.
  */
 async function createWorktree(cwd: string, jobId: string): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+  const { stdout } = await execFileAsync("git", [
+    "-C",
+    cwd,
+    "rev-parse",
+    "--show-toplevel",
+  ]);
   const gitRoot = stdout.trim();
   await mkdir(WORKTREES_DIR, { recursive: true });
   const worktreePath = join(WORKTREES_DIR, jobId);
   const branchName = `agent/${jobId}`;
-  await execFileAsync("git", ["-C", gitRoot, "worktree", "add", "-b", branchName, worktreePath]);
+  await execFileAsync("git", [
+    "-C",
+    gitRoot,
+    "worktree",
+    "add",
+    "-b",
+    branchName,
+    worktreePath,
+  ]);
   return worktreePath;
 }
 
@@ -40,9 +54,9 @@ export async function removeWorktree(job: Session): Promise<void> {
   const { id, worktreePath } = job;
   try {
     await execFileAsync("git", ["worktree", "remove", "--force", worktreePath]);
-    log.info({ id, path: worktreePath }, 'worktree removed');
+    log.info({ id, path: worktreePath }, "worktree removed");
   } catch (err) {
-    log.warn({ id, err }, 'failed to remove worktree');
+    log.warn({ id, err }, "failed to remove worktree");
   }
 }
 
@@ -52,15 +66,19 @@ export async function removeWorktree(job: Session): Promise<void> {
  * - Otherwise attempts to create a git worktree; on success stores the path on
  *   the job and returns it. On failure logs a warning and falls back to `cwd`.
  */
-export async function resolveEffectiveCwd(id: string, cwd: string | null, useWorktree: boolean): Promise<string | null> {
+export async function resolveEffectiveCwd(
+  id: string,
+  cwd: string | null,
+  useWorktree: boolean,
+): Promise<string | null> {
   if (!useWorktree || !cwd) return cwd;
   try {
     const worktreePath = await createWorktree(cwd, id);
     store.setWorktreePath(id, worktreePath);
-    log.info({ id, path: worktreePath }, 'worktree created');
+    log.info({ id, path: worktreePath }, "worktree created");
     return worktreePath;
   } catch (err) {
-    log.warn({ id, err }, 'failed to create worktree, falling back to cwd');
+    log.warn({ id, err }, "failed to create worktree, falling back to cwd");
     return cwd;
   }
 }
