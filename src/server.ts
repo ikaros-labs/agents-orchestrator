@@ -162,9 +162,9 @@ Bun.serve({
         const session = store.createSession(id, prompt, cwd, inputImageRefs, mode as SessionMode, useWorktree, model ?? null, effort ?? null, sandbox as SandboxMode);
         generateTitle(prompt, rawImages).then(title => { if (title) store.setTitle(id, title); }).catch(() => {});
         if (mode === "edit") {
-          queueMicrotask(() => sessions.directExecuteSession(session, { prompt, rawImages }));
+          queueMicrotask(() => sessions.executeSession(session, { prompt, rawImages }));
         } else {
-          queueMicrotask(() => sessions.planSession(session, { prompt, rawImages }));
+          queueMicrotask(() => sessions.executeSession(session, { prompt, rawImages }));
         }
 
         return Response.json({ id, status: "pending" }, { status: 202 });
@@ -185,7 +185,7 @@ Bun.serve({
         store.setModel(id, parsed.data.model);
       }
       store.setMode(id, "edit");
-      queueMicrotask(() => sessions.executeSession(store.getSession(id)!));
+      queueMicrotask(() => sessions.executeApprovedSession(store.getSession(id)!));
       return Response.json({ id, status: "running" }, { status: 202 });
     }),
 
@@ -201,7 +201,7 @@ Bun.serve({
       if (!session.claudeSessionId) return jsonError(500, "No Claude session ID available for revision");
       const parsed = await parseBody(req, ReviseSchema);
       if (parsed instanceof Response) return parsed;
-      queueMicrotask(() => sessions.revisePlanSession(session, { prompt: parsed.data.prompt }));
+      queueMicrotask(() => sessions.followUpSession(session, { prompt: parsed.data.prompt, rawImages: [] }));
       return Response.json({ id, status: "planning" }, { status: 202 });
     }),
 

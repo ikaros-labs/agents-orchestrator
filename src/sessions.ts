@@ -431,53 +431,37 @@ async function runSessionCore(session: Session, opts: RunSessionCoreOptions): Pr
   });
 }
 
-// ── Session runners (exported) ───────────────────────────────────────────────
-
-export async function planSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
-  console.log(`[planSession] id=${session.id}`);
-  store.setStatus(session.id, "planning");
+export async function executeSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
+  console.log(`[executeSession] id=${session.id}`);
+  store.setStatus(session.id, session.mode === "auto" || session.mode === "plan" ? "planning" : "running");
   await resolveEffectiveCwd(session.id, session.cwd, session.useWorktree);
   const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, session.id) : userInput.prompt;
-  await runSessionCore(store.getSession(session.id)!, {
-    mode: 'plan', prompt: promptArg,
-    imageCount: userInput.rawImages.length, captureResult: false, finalStatus: "awaiting_approval",
-  });
-}
 
-export async function revisePlanSession(session: Session, userInput: { prompt: string }): Promise<void> {
-  console.log(`[revisePlanSession] id=${session.id}`);
-  store.setStatus(session.id, "planning");
-  store.appendChat(session.id, { type: "user", text: userInput.prompt, ts: new Date().toISOString() });
+  if (session.mode === "auto" || session.mode === "plan") {
+
+    await runSessionCore(session, {
+        mode: 'plan', prompt: promptArg,
+        imageCount: userInput.rawImages.length, captureResult: false, finalStatus: "awaiting_approval",
+    });
+    return;
+  }
+
   await runSessionCore(session, {
-    mode: 'plan', prompt: userInput.prompt,
-    imageCount: 0, captureResult: false, finalStatus: "awaiting_approval",
-  });
-}
-
-export async function directExecuteSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
-  console.log(`[directExecuteSession] id=${session.id}`);
-  store.setStatus(session.id, "running");
-  await resolveEffectiveCwd(session.id, session.cwd, session.useWorktree);
-  const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, session.id) : userInput.prompt;
-  await runSessionCore(store.getSession(session.id)!, {
     mode: 'edit', prompt: promptArg,
     imageCount: userInput.rawImages.length, captureResult: true, finalStatus: "completed",
   });
 }
 
-export async function executeSession(session: Session): Promise<void> {
-  console.log(`[executeSession] id=${session.id}`);
-  store.setStatus(session.id, "running");
-  await runSessionCore(session, {
-    mode: 'edit', prompt: "The plan has been approved. Proceed with execution now.",
-    imageCount: 0, captureResult: true, finalStatus: "completed",
-  });
+export async function executeApprovedSession(session: Session): Promise<void> {
+  store.setMode(session.id, "edit");
+  await followUpSession(session, { prompt: "The plan has been approved. Proceed with execution now.", rawImages: [] });
 }
 
 export async function followUpSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
   console.log(`[followUpSession] id=${session.id}`);
-  store.setStatus(session.id, "running");
-  store.clearResult(session.id);
+  const isEdit = session.mode === 'edit';
+  store.setStatus(session.id, isEdit ? "running" : "planning");
+  if (isEdit) store.clearResult(session.id);
   store.appendChat(session.id, { type: "user", text: userInput.prompt, ts: new Date().toISOString() });
   const followupId = `${session.id}-followup-${Date.now()}`;
   if (userInput.rawImages.length > 0) {
@@ -487,8 +471,10 @@ export async function followUpSession(session: Session, userInput: { prompt: str
     }
   }
   const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, followupId) : userInput.prompt;
+
   await runSessionCore(session, {
-    mode: 'edit', prompt: promptArg,
-    imageCount: 0, captureResult: true, finalStatus: "completed",
+    mode: isEdit ? 'edit' : 'plan',
+    prompt: promptArg,
+    imageCount: 0, captureResult: isEdit, finalStatus: isEdit ? "completed" : "awaiting_approval",
   });
 }
