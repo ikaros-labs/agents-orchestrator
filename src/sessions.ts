@@ -5,7 +5,7 @@ import { basename, extname, join } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
 import * as store from "./store.ts";
-import type { SessionEffort, SandboxMode, SessionStatus } from "./types.ts";
+import type { Session, SessionEffort, SandboxMode, SessionStatus } from "./types.ts";
 import { jobStderr, makeStderrCapturingSpawner, makeDockerSpawner } from "./spawners.ts";
 import { resolveEffectiveCwd } from "./worktree.ts";
 
@@ -407,95 +407,88 @@ async function runWithController(
 interface RunSessionCoreOptions {
   mode: 'plan' | 'edit';
   prompt: unknown;
-  claudeSessionId?: string;
-  cwd: string | null;
-  inWorktree: boolean;
   imageCount: number;
   captureResult: boolean;
   finalStatus: SessionStatus;
 }
 
-async function runSessionCore(id: string, opts: RunSessionCoreOptions): Promise<void> {
-  const session = store.getSession(id);
-  await runWithController(id, async (controller) => {
+async function runSessionCore(session: Session, opts: RunSessionCoreOptions): Promise<void> {
+  const effectiveCwd = session.worktreePath ?? session.cwd;
+  const inWorktree = !!session.worktreePath;
+  await runWithController(session.id, async (controller) => {
     const stream = query({
       prompt: opts.prompt as any,
-      options: buildQueryOptions(id, opts.mode, session?.sandbox ?? "none", opts.cwd, opts.inWorktree, {
-        claudeSessionId: opts.claudeSessionId,
-        model: session?.model,
-        effort: session?.effort,
+      options: buildQueryOptions(session.id, opts.mode, session.sandbox ?? "none", effectiveCwd, inWorktree, {
+        claudeSessionId: session.claudeSessionId ?? undefined,
+        model: session.model,
+        effort: session.effort,
         abortController: controller,
       }),
     });
-    await runQueryStream(id, stream, opts.imageCount, { captureResult: opts.captureResult });
+    await runQueryStream(session.id, stream, opts.imageCount, { captureResult: opts.captureResult });
     if (controller.signal.aborted) return;
-    store.setStatus(id, opts.finalStatus);
+    store.setStatus(session.id, opts.finalStatus);
   });
 }
 
 // ── Session runners (exported) ───────────────────────────────────────────────
 
-export async function planSession(id: string, prompt: string, cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
-  console.log(`[planSession] id=${id}`);
-  store.setStatus(id, "planning");
-  const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
-  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  const inWorktree = !!store.getSession(id)?.worktreePath;
-  await runSessionCore(id, {
-    mode: 'plan', prompt: promptArg, cwd: effectiveCwd, inWorktree,
-    imageCount: rawImages.length, captureResult: false, finalStatus: "awaiting_approval",
+export async function planSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
+  console.log(`[planSession] id=${session.id}`);
+  store.setStatus(session.id, "planning");
+  await resolveEffectiveCwd(session.id, session.cwd, session.useWorktree);
+  const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, session.id) : userInput.prompt;
+  await runSessionCore(store.getSession(session.id)!, {
+    mode: 'plan', prompt: promptArg,
+    imageCount: userInput.rawImages.length, captureResult: false, finalStatus: "awaiting_approval",
   });
 }
 
-export async function revisePlanSession(id: string, feedback: string, claudeSessionId: string, cwd: string | null): Promise<void> {
-  console.log(`[revisePlanSession] id=${id}`);
-  store.setStatus(id, "planning");
-  store.appendChat(id, { type: "user", text: feedback, ts: new Date().toISOString() });
-  const inWorktree = !!store.getSession(id)?.worktreePath;
-  await runSessionCore(id, {
-    mode: 'plan', prompt: feedback, claudeSessionId, cwd, inWorktree,
+export async function revisePlanSession(session: Session, userInput: { prompt: string }): Promise<void> {
+  console.log(`[revisePlanSession] id=${session.id}`);
+  store.setStatus(session.id, "planning");
+  store.appendChat(session.id, { type: "user", text: userInput.prompt, ts: new Date().toISOString() });
+  await runSessionCore(session, {
+    mode: 'plan', prompt: userInput.prompt,
     imageCount: 0, captureResult: false, finalStatus: "awaiting_approval",
   });
 }
 
-export async function directExecuteSession(id: string, prompt: string, cwd: string | null, rawImages: RawImage[], useWorktree: boolean = false): Promise<void> {
-  console.log(`[directExecuteSession] id=${id}`);
-  store.setStatus(id, "running");
-  const effectiveCwd = await resolveEffectiveCwd(id, cwd, useWorktree);
-  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, id) : prompt;
-  const inWorktree = !!store.getSession(id)?.worktreePath;
-  await runSessionCore(id, {
-    mode: 'edit', prompt: promptArg, cwd: effectiveCwd, inWorktree,
-    imageCount: rawImages.length, captureResult: true, finalStatus: "completed",
+export async function directExecuteSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
+  console.log(`[directExecuteSession] id=${session.id}`);
+  store.setStatus(session.id, "running");
+  await resolveEffectiveCwd(session.id, session.cwd, session.useWorktree);
+  const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, session.id) : userInput.prompt;
+  await runSessionCore(store.getSession(session.id)!, {
+    mode: 'edit', prompt: promptArg,
+    imageCount: userInput.rawImages.length, captureResult: true, finalStatus: "completed",
   });
 }
 
-export async function executeSession(id: string, claudeSessionId: string, cwd: string | null): Promise<void> {
-  console.log(`[executeSession] id=${id}`);
-  store.setStatus(id, "running");
-  const inWorktree = !!store.getSession(id)?.worktreePath;
-  await runSessionCore(id, {
+export async function executeSession(session: Session): Promise<void> {
+  console.log(`[executeSession] id=${session.id}`);
+  store.setStatus(session.id, "running");
+  await runSessionCore(session, {
     mode: 'edit', prompt: "The plan has been approved. Proceed with execution now.",
-    claudeSessionId, cwd, inWorktree, imageCount: 0, captureResult: true, finalStatus: "completed",
+    imageCount: 0, captureResult: true, finalStatus: "completed",
   });
 }
 
-export async function followUpSession(id: string, prompt: string, claudeSessionId: string | null, cwd: string | null, rawImages: RawImage[]): Promise<void> {
-  console.log(`[followUpSession] id=${id}`);
-  store.setStatus(id, "running");
-  store.clearResult(id);
-  store.appendChat(id, { type: "user", text: prompt, ts: new Date().toISOString() });
-  const followupId = `${id}-followup-${Date.now()}`;
-  if (rawImages.length > 0) {
-    const urls = await Promise.all(rawImages.map((img, i) => saveImage(followupId, i, img.mediaType, img.data)));
-    for (let i = 0; i < rawImages.length; i++) {
-      store.appendChat(id, { type: "image", mediaType: rawImages[i].mediaType, url: urls[i], ts: new Date().toISOString() });
+export async function followUpSession(session: Session, userInput: { prompt: string, rawImages: RawImage[] }): Promise<void> {
+  console.log(`[followUpSession] id=${session.id}`);
+  store.setStatus(session.id, "running");
+  store.clearResult(session.id);
+  store.appendChat(session.id, { type: "user", text: userInput.prompt, ts: new Date().toISOString() });
+  const followupId = `${session.id}-followup-${Date.now()}`;
+  if (userInput.rawImages.length > 0) {
+    const urls = await Promise.all(userInput.rawImages.map((img, i) => saveImage(followupId, i, img.mediaType, img.data)));
+    for (let i = 0; i < userInput.rawImages.length; i++) {
+      store.appendChat(session.id, { type: "image", mediaType: userInput.rawImages[i].mediaType, url: urls[i], ts: new Date().toISOString() });
     }
   }
-  const promptArg = rawImages.length > 0 ? makePrompt(prompt, rawImages, followupId) : prompt;
-  const inWorktree = !!store.getSession(id)?.worktreePath;
-  await runSessionCore(id, {
-    mode: 'edit', prompt: promptArg, claudeSessionId: claudeSessionId ?? undefined,
-    cwd, inWorktree, imageCount: 0, captureResult: true, finalStatus: "completed",
+  const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, followupId) : userInput.prompt;
+  await runSessionCore(session, {
+    mode: 'edit', prompt: promptArg,
+    imageCount: 0, captureResult: true, finalStatus: "completed",
   });
 }
