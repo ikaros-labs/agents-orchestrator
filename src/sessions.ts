@@ -114,6 +114,7 @@ function worktreeSystemPrompt(inWorktree: boolean) {
 
 function buildQueryOptions(
   id: string,
+  mode: 'plan' | 'edit',
   sandbox: SandboxMode,
   cwd: string | null,
   inWorktree: boolean,
@@ -121,9 +122,11 @@ function buildQueryOptions(
 ): Record<string, any> {
   const base = {
     tools: { type: "preset" as const, preset: "claude_code" as const },
+    permissionMode: mode === 'plan' ? 'plan' : 'acceptEdits' as const,
     settingSources: ["user", "project", "local"] as const,
     mcpServers: { orchestrator: makeAttachFilesServer(id) },
     abortController: opts.abortController,
+    canUseTool: makeCanUseTool(id),
     spawnClaudeCodeProcess: makeStderrCapturingSpawner(id),
     ...(opts.claudeSessionId ? { resume: opts.claudeSessionId } : {}),
     ...(opts.model ? { model: opts.model } : {}),
@@ -131,6 +134,10 @@ function buildQueryOptions(
     ...worktreeSystemPrompt(inWorktree),
     ...(cwd ? { cwd } : {}),
   };
+
+  if (mode === 'plan') {
+    return base;
+  }
 
   if (sandbox === "approval") {
     return { ...base, permissionMode: "acceptEdits" as const, canUseTool: makeCanUseTool(id) };
@@ -412,18 +419,11 @@ export async function planSession(id: string, prompt: string, cwd: string | null
     // Planning phase always uses "plan" mode regardless of sandbox setting
     const stream = query({
       prompt: promptArg as any,
-      options: {
-        tools: { type: "preset" as const, preset: "claude_code" as const },
-        permissionMode: "plan",
-        canUseTool: makeCanUseTool(id),
-        settingSources: ["user", "project", "local"],
-        mcpServers: { orchestrator: makeAttachFilesServer(id) },
+      options: buildQueryOptions(id, 'plan', session?.sandbox ?? "none", effectiveCwd, useWorktree, {
+        model: session?.model,
+        effort: session?.effort,
         abortController: controller,
-        ...(session?.model ? { model: session.model } : {}),
-        ...(session?.effort ? { effort: session.effort } : {}),
-        ...worktreeSystemPrompt(useWorktree),
-        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-      },
+      }),
     });
     await runQueryStream(id, stream, rawImages.length, {});
     if (controller.signal.aborted) return;
@@ -441,19 +441,9 @@ export async function revisePlanSession(id: string, feedback: string, claudeSess
     // Planning phase always uses "plan" mode regardless of sandbox setting
     const stream = query({
       prompt: feedback,
-      options: {
-        tools: { type: "preset" as const, preset: "claude_code" as const },
-        permissionMode: "plan",
-        canUseTool: makeCanUseTool(id),
-        settingSources: ["user", "project", "local"],
-        mcpServers: { orchestrator: makeAttachFilesServer(id) },
-        resume: claudeSessionId,
-        abortController: controller,
-        ...(session?.model ? { model: session.model } : {}),
-        ...(session?.effort ? { effort: session.effort } : {}),
-        ...worktreeSystemPrompt(inWorktree),
-        ...(cwd ? { cwd } : {}),
-      },
+      options: buildQueryOptions(id, 'plan', session?.sandbox ?? "none", cwd, inWorktree, {
+        claudeSessionId, model: session?.model, effort: session?.effort, abortController: controller,
+      }),
     });
     await runQueryStream(id, stream, 0, {});
     if (controller.signal.aborted) return;
@@ -472,7 +462,7 @@ export async function directExecuteSession(id: string, prompt: string, cwd: stri
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: promptArg as any,
-      options: buildQueryOptions(id, sandbox, effectiveCwd, inWorktree, {
+      options: buildQueryOptions(id, 'edit', sandbox, effectiveCwd, inWorktree, {
         model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });
@@ -491,7 +481,7 @@ export async function executeSession(id: string, claudeSessionId: string, cwd: s
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: "The plan has been approved. Proceed with execution now.",
-      options: buildQueryOptions(id, sandbox, cwd, inWorktree, {
+      options: buildQueryOptions(id, 'edit', sandbox, cwd, inWorktree, {
         claudeSessionId, model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });
@@ -522,7 +512,7 @@ export async function followUpSession(id: string, prompt: string, claudeSessionI
   await runWithController(id, async (controller) => {
     const stream = query({
       prompt: promptArg as any,
-      options: buildQueryOptions(id, sandbox, cwd, inWorktree, {
+      options: buildQueryOptions(id, 'edit', sandbox, cwd, inWorktree, {
         claudeSessionId: claudeSessionId ?? undefined, model: session?.model, effort: session?.effort, abortController: controller,
       }),
     });
