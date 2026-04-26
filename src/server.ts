@@ -184,7 +184,6 @@ Bun.serve({
       if (!(parsed instanceof Response) && parsed.data.model) {
         store.setModel(id, parsed.data.model);
       }
-      store.setMode(id, "edit");
       queueMicrotask(() => sessions.executeApprovedSession(store.getSession(id)!));
       return Response.json({ id, status: "running" }, { status: 202 });
     }),

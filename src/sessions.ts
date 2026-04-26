@@ -438,7 +438,6 @@ export async function executeSession(session: Session, userInput: { prompt: stri
   const promptArg = userInput.rawImages.length > 0 ? makePrompt(userInput.prompt, userInput.rawImages, session.id) : userInput.prompt;
 
   if (session.mode === "auto" || session.mode === "plan") {
-
     await runSessionCore(session, {
         mode: 'plan', prompt: promptArg,
         imageCount: userInput.rawImages.length, captureResult: false, finalStatus: "awaiting_approval",
