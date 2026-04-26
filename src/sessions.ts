@@ -148,9 +148,6 @@ function buildQueryOptions(
       sandbox: {
         enabled: true,
         autoAllowBashIfSandboxed: true,
-        filesystem: {
-          denyRead: ["/root/.ssh", "~/.ssh"],
-        },
       },
     };
   }
