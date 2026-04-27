@@ -297,11 +297,12 @@ function makeCanUseTool(id: string, sandbox: SandboxMode): CanUseTool {
     }
 
     // In sandbox mode all tools run inside the sandbox, so auto-approve everything —
-    // except Bash calls with dangerouslyDisableSandbox, which escape the sandbox and need manual review.
-    if (sandbox === "sandbox") {
-      if (!(toolName === "Bash" && input.dangerouslyDisableSandbox === true)) {
-        return { behavior: "allow", updatedInput: input };
-      }
+    // except tools that require explicit user interaction regardless of sandbox state.
+    const needsManualApproval =
+      toolName === "AskUserQuestion" ||
+      (toolName === "Bash" && input.dangerouslyDisableSandbox === true);
+    if (sandbox === "sandbox" && !needsManualApproval) {
+      return { behavior: "allow", updatedInput: input };
     }
 
     store.addPendingTool(id, toolUseID, toolName, input, agentID);
