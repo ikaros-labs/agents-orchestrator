@@ -203,8 +203,10 @@ export function setStatus(id: string, status: SessionStatus): void {
   if (!session) return;
   session.status = status;
   if (status === "running") session.startedAt = new Date().toISOString();
-  if (status === "completed" || status === "failed" || status === "stopped")
+  if (status === "completed" || status === "failed" || status === "stopped") {
     session.finishedAt = new Date().toISOString();
+    session.pendingTools = [];
+  }
   persistSession(session);
   emitSessionStatus(session);
 }
