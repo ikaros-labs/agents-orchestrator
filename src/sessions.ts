@@ -173,7 +173,7 @@ function buildQueryOptions(
     settingSources: ["user", "project", "local"] as const,
     mcpServers: { orchestrator: makeAttachFilesServer(id) },
     abortController: opts.abortController,
-    canUseTool: makeCanUseTool(id),
+    canUseTool: makeCanUseTool(id, sandbox),
     spawnClaudeCodeProcess: makeStderrCapturingSpawner(id),
     ...(opts.claudeSessionId ? { resume: opts.claudeSessionId } : {}),
     ...(opts.model ? { model: opts.model } : {}),
@@ -274,7 +274,7 @@ export function stopSession(id: string): boolean {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-function makeCanUseTool(id: string): CanUseTool {
+function makeCanUseTool(id: string, sandbox: SandboxMode): CanUseTool {
   return async (
     toolName: string,
     input: Record<string, unknown>,
@@ -293,6 +293,11 @@ function makeCanUseTool(id: string): CanUseTool {
 
     // Auto-approve attach_files — it only copies files for display, no confirmation needed.
     if (toolName === "mcp__orchestrator__attach_files") {
+      return { behavior: "allow", updatedInput: input };
+    }
+
+    // In sandbox mode all tools run inside the sandbox, so auto-approve everything.
+    if (sandbox === "sandbox") {
       return { behavior: "allow", updatedInput: input };
     }
 
