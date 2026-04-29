@@ -36,6 +36,7 @@ let currentSandbox = "sandbox";
 let showArchived = false;
 let archivedCount = 0;
 const approvalModels = {}; // sessionId → model selected for execution at approval time
+let slashCommands = []; // { name, description, argumentHint }
 
 // ── File attachment state ───────────────────────────────────────────────────
 let pendingFiles = []; // { mediaType, data, objectUrl, name }
@@ -1046,6 +1047,7 @@ function initSSE() {
     const data = JSON.parse(e.data);
     const list = data.sessions;
     archivedCount = data.archivedCount;
+    if (data.slashCommands) slashCommands = data.slashCommands;
     list.forEach((j) => {
       sessions[j.id] = j;
     });
@@ -1397,6 +1399,142 @@ window.addEventListener("resize", () => {
   const active = isMobile() && mobileView === "detail" && selectedId;
   main.classList.toggle("mobile-detail-active", !!active);
   document.body.classList.toggle("mobile-detail-active", !!active);
+});
+
+// ── Slash command autocomplete ──────────────────────────────────────────────
+let acDropdown = null;
+let acTextarea = null;
+let acFiltered = [];
+let acIndex = 0;
+
+function ensureDropdown() {
+  if (acDropdown) return acDropdown;
+  const el = document.createElement("div");
+  el.className = "slash-autocomplete";
+  el.style.display = "none";
+  document.body.appendChild(el);
+  acDropdown = el;
+  return el;
+}
+
+function showAutocomplete(textarea) {
+  const dd = ensureDropdown();
+  acTextarea = textarea;
+  const rect = textarea.getBoundingClientRect();
+  dd.style.position = "fixed";
+  dd.style.left = rect.left + "px";
+  dd.style.bottom = (window.innerHeight - rect.top + 4) + "px";
+  dd.style.width = Math.min(rect.width, 420) + "px";
+  dd.style.display = "";
+  updateAutocompleteFilter();
+}
+
+function hideAutocomplete() {
+  if (acDropdown) acDropdown.style.display = "none";
+  acTextarea = null;
+  acFiltered = [];
+  acIndex = 0;
+}
+
+function updateAutocompleteFilter() {
+  if (!acTextarea || !acDropdown) return;
+  const val = acTextarea.value;
+  if (!val.startsWith("/")) { hideAutocomplete(); return; }
+  const typed = val.split(/\s/)[0].slice(1).toLowerCase();
+  acFiltered = slashCommands.filter(cmd =>
+    cmd.name.toLowerCase().includes(typed)
+  );
+  if (acFiltered.length === 0) {
+    acDropdown.style.display = "none";
+    return;
+  }
+  acDropdown.style.display = "";
+  acIndex = Math.min(acIndex, acFiltered.length - 1);
+  renderAutocomplete();
+}
+
+function renderAutocomplete() {
+  if (!acDropdown) return;
+  acDropdown.innerHTML = acFiltered.map((cmd, i) => `
+    <div class="slash-ac-item${i === acIndex ? " active" : ""}" data-ac-index="${i}">
+      <span class="slash-ac-name">/${escHtml(cmd.name)}</span>
+      ${cmd.argumentHint ? `<span class="slash-ac-hint">${escHtml(cmd.argumentHint)}</span>` : ""}
+      ${cmd.description ? `<span class="slash-ac-desc">${escHtml(cmd.description)}</span>` : ""}
+    </div>
+  `).join("");
+}
+
+function selectAutocomplete(index) {
+  if (!acTextarea || !acFiltered[index]) return;
+  const cmd = acFiltered[index];
+  const val = acTextarea.value;
+  const spaceIdx = val.indexOf(" ");
+  const suffix = spaceIdx >= 0 ? val.slice(spaceIdx) : " ";
+  acTextarea.value = "/" + cmd.name + suffix;
+  const cursorPos = cmd.name.length + 2;
+  acTextarea.setSelectionRange(cursorPos, cursorPos);
+  acTextarea.focus();
+  hideAutocomplete();
+}
+
+document.addEventListener("input", (e) => {
+  if (e.target.tagName !== "TEXTAREA") return;
+  const ta = e.target;
+  if (ta.id === "prompt" || ta.id.startsWith("followup-prompt-") || ta.id.startsWith("revise-prompt-")) {
+    if (ta.value.startsWith("/") && slashCommands.length > 0) {
+      if (acTextarea !== ta) showAutocomplete(ta);
+      else updateAutocompleteFilter();
+    } else {
+      if (acTextarea === ta) hideAutocomplete();
+    }
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (!acTextarea || !acDropdown || acDropdown.style.display === "none") return;
+  if (e.target !== acTextarea) return;
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    acIndex = Math.min(acIndex + 1, acFiltered.length - 1);
+    renderAutocomplete();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    acIndex = Math.max(acIndex - 1, 0);
+    renderAutocomplete();
+  } else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && acFiltered.length > 0) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectAutocomplete(acIndex);
+  } else if (e.key === "Tab" && !e.shiftKey && acFiltered.length > 0) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectAutocomplete(acIndex);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    hideAutocomplete();
+  }
+}, true);
+
+document.addEventListener("mousedown", (e) => {
+  if (!acDropdown) return;
+  const item = e.target.closest(".slash-ac-item");
+  if (item && acDropdown.contains(item)) {
+    e.preventDefault();
+    selectAutocomplete(Number(item.dataset.acIndex));
+    return;
+  }
+  if (acTextarea && !acDropdown.contains(e.target) && e.target !== acTextarea) {
+    hideAutocomplete();
+  }
+});
+
+document.addEventListener("mouseover", (e) => {
+  if (!acDropdown) return;
+  const item = e.target.closest(".slash-ac-item");
+  if (item && acDropdown.contains(item)) {
+    acIndex = Number(item.dataset.acIndex);
+    renderAutocomplete();
+  }
 });
 
 // Eagerly show the detail panel if a job hash is in the URL, to avoid the
