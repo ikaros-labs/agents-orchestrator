@@ -14,12 +14,17 @@ import * as store from "./store.ts";
 import { generateTitle } from "./title.ts";
 import type { SandboxMode, Session, SessionMode } from "./types.ts";
 import { removeWorktree } from "./worktree.ts";
+import {
+  getSlashCommands,
+  startCommandDiscovery,
+} from "./slash-commands.ts";
 
 const log = logger.child({ component: "server" });
 
 const sseEncoder = new TextEncoder();
 
 store.loadStore();
+startCommandDiscovery();
 
 const UI_HTML = await Bun.file(
   new URL("./public/index.html", import.meta.url),
@@ -142,6 +147,7 @@ Bun.serve({
           const snapshot = {
             sessions: store.listSessions(),
             archivedCount: store.countArchivedSessions(),
+            slashCommands: getSlashCommands(),
           };
           controller.enqueue(
             sseEncoder.encode(
@@ -188,6 +194,10 @@ Bun.serve({
         },
       });
     },
+
+    // ── Slash commands ──────────────────────────────────────────────────────
+
+    "/slash-commands": () => Response.json(getSlashCommands()),
 
     // ── Sessions ───────────────────────────────────────────────────────────
 
