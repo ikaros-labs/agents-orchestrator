@@ -11,7 +11,7 @@ export type SessionStatus =
 
 export type SessionMode = "auto" | "plan" | "edit";
 export type SessionEffort = "low" | "medium" | "high" | "max";
-export type SandboxMode = "none" | "sandbox" | "docker";
+export type SandboxMode = "none" | "sandbox" | "docker" | "yolo";
 
 export type ChatEntry =
   | { type: "text"; text: string; ts: string }
