@@ -208,6 +208,14 @@ function buildQueryOptions(
     };
   }
 
+  if (sandbox === "yolo") {
+    return {
+      ...autoApprove,
+      permissionMode: "bypassPermissions" as const,
+      allowDangerouslySkipPermissions: true,
+    };
+  }
+
   // "none" — auto-approve with no extra isolation
   return autoApprove;
 }
@@ -293,6 +301,11 @@ function makeCanUseTool(id: string, sandbox: SandboxMode): CanUseTool {
 
     // Auto-approve attach_files — it only copies files for display, no confirmation needed.
     if (toolName === "mcp__orchestrator__attach_files") {
+      return { behavior: "allow", updatedInput: input };
+    }
+
+    // In yolo mode auto-approve all tools; AskUserQuestion still needs user input to answer.
+    if (sandbox === "yolo" && toolName !== "AskUserQuestion") {
       return { behavior: "allow", updatedInput: input };
     }
 

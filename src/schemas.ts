@@ -27,7 +27,7 @@ export const CreateSessionSchema = z.object({
     .optional()
     .default(DEFAULTS.effort),
   sandbox: z
-    .enum(["none", "sandbox", "docker"])
+    .enum(["none", "sandbox", "docker", "yolo"])
     .optional()
     .default(DEFAULTS.sandbox),
 });
