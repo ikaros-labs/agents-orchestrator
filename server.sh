@@ -9,7 +9,7 @@ mkdir -p /tmp/agents-orchestrator
 PID_FILE="/tmp/agents-orchestrator/server.pid"
 LOG_FILE="/tmp/agents-orchestrator/server.log"
 
-ENV_FILE="/root/agents-orchestrator/.env"
+ENV_FILE="$HOME/agents-orchestrator/.env"
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck source=/dev/null
