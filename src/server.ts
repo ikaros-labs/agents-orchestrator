@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { normalize, resolve } from "node:path";
-import type { z } from "zod";
+import { readdir, readFile, stat, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
+import { normalize, resolve, dirname } from "node:path";
+import { z } from "zod";
 import logger from "./logger.ts";
 import {
   AnswerQuestionSchema,
@@ -275,6 +276,7 @@ Bun.serve({
             sessions: store.listSessions(),
             archivedCount: store.countArchivedSessions(),
             slashCommands: getSlashCommands(),
+            home: homedir(),
           };
           controller.enqueue(
             sseEncoder.encode(
@@ -325,6 +327,39 @@ Bun.serve({
     // ── Slash commands ──────────────────────────────────────────────────────
 
     "/slash-commands": () => Response.json(getSlashCommands()),
+
+    // ── Directory browser ──────────────────────────────────────────────────
+
+    "/browse": async (req) => {
+      const url = new URL(req.url);
+      const rawPath = url.searchParams.get("path") || homedir();
+      const showHidden = url.searchParams.get("showHidden") === "true";
+      const target = resolve(rawPath);
+      const parent = target === "/" ? null : dirname(target);
+      try {
+        const entries = await readdir(target, { withFileTypes: true });
+        const dirs = entries
+          .filter((e) => e.isDirectory() && (showHidden || !e.name.startsWith(".")))
+          .map((e) => e.name)
+          .sort((a, b) => a.localeCompare(b));
+        return Response.json({ path: target, parent, dirs });
+      } catch (err: any) {
+        return Response.json({ path: target, parent, dirs: [], error: err.message });
+      }
+    },
+
+    "/mkdir": {
+      POST: async (req) => {
+        const parsed = await parseBody(req, z.object({ path: z.string().min(1) }));
+        if (parsed instanceof Response) return parsed;
+        try {
+          await mkdir(parsed.data.path, { recursive: true });
+          return Response.json({ ok: true, path: parsed.data.path });
+        } catch (err: any) {
+          return jsonError(500, err.message);
+        }
+      },
+    },
 
     // ── Sessions ───────────────────────────────────────────────────────────
 

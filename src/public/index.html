@@ -50,9 +50,8 @@
       </div>
       <select id="cwd-select" onchange="onCwdSelectChange()">
         <option value="">Working directory (optional)</option>
-        <option value="__new__">＋ Add directory…</option>
+        <option value="__new__">＋ Browse…</option>
       </select>
-      <input type="text" id="cwd-custom" placeholder="Enter path…" style="display:none">
       <label class="worktree-label">
         <input type="checkbox" id="use-worktree" checked> Use worktree
       </label>
@@ -88,6 +87,29 @@
     </div>
   </div>
   <div class="detail hidden" id="detail"><div class="detail-empty">Select a session to see details</div></div>
+</div>
+<div id="folder-browser-overlay" class="fb-overlay" style="display:none" onclick="fbOverlayClick(event)">
+  <div class="fb-modal">
+    <div class="fb-header">
+      <div class="fb-breadcrumb" id="fb-breadcrumb"></div>
+      <button class="fb-close-btn" onclick="closeFolderBrowser()">&times;</button>
+    </div>
+    <div class="fb-list-container">
+      <div class="fb-list" id="fb-list"></div>
+    </div>
+    <div class="fb-footer">
+      <div class="fb-footer-left">
+        <button class="fb-new-folder-btn" onclick="fbNewFolder()">New Folder</button>
+        <label class="fb-hidden-toggle">
+          <input type="checkbox" id="fb-show-hidden" onchange="fbToggleHidden()"> Show hidden
+        </label>
+      </div>
+      <div class="fb-footer-right">
+        <button class="fb-cancel-btn" onclick="closeFolderBrowser()">Cancel</button>
+        <button class="fb-select-btn" onclick="fbSelectFolder()">Select Folder</button>
+      </div>
+    </div>
+  </div>
 </div>
 <script src="/app.js"></script>
 </body>

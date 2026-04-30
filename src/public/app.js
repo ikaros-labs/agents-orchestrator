@@ -240,10 +240,7 @@ function setSandbox(sandbox) {
 
 function onCwdSelectChange() {
   const sel = document.getElementById("cwd-select");
-  const inp = document.getElementById("cwd-custom");
-  const isNew = sel.value === "__new__";
-  inp.style.display = isNew ? "" : "none";
-  if (isNew) inp.focus();
+  if (sel.value === "__new__") openFolderBrowser();
 }
 
 function updateCwdSelect(list) {
@@ -251,7 +248,7 @@ function updateCwdSelect(list) {
   const seen = new Set();
   const dirs = [];
   for (const j of list) {
-    if (j.cwd && !seen.has(j.cwd)) {
+    if (j.cwd && !j.cwd.includes("/.agent-orchestrator/worktrees/") && !seen.has(j.cwd)) {
       seen.add(j.cwd);
       dirs.push(j.cwd);
     }
@@ -264,15 +261,197 @@ function updateCwdSelect(list) {
   dirs.forEach((dir) => {
     const opt = document.createElement("option");
     opt.value = dir;
-    opt.textContent = dir;
+    opt.textContent = displayPath(dir);
     sel.insertBefore(opt, addNewOpt);
   });
-  if (current && Array.from(sel.options).some((o) => o.value === current)) {
-    sel.value = current; // restore previous selection
-  } else if (!current && dirs.length) {
-    sel.value = dirs[0]; // default to most recent on first load
+  if (current && current !== "__new__" && Array.from(sel.options).some((o) => o.value === current)) {
+    sel.value = current;
+  } else if ((!current || current === "__new__") && dirs.length) {
+    sel.value = dirs[0];
   }
 }
+
+// ── Folder browser ──────────────────────────────────────────────────────────
+
+let fbCurrentPath = "";
+let fbShowHidden = false;
+let fbFetchGen = 0;
+let fbPrevSelectValue = "";
+let fbHome = "";
+
+function displayPath(p) {
+  if (!fbHome) return p;
+  if (p === fbHome) return "~";
+  if (p.startsWith(fbHome + "/")) return "~" + p.slice(fbHome.length);
+  return p;
+}
+
+function openFolderBrowser() {
+  const sel = document.getElementById("cwd-select");
+  fbPrevSelectValue = sel.value === "__new__" ? "" : sel.value;
+  const overlay = document.getElementById("folder-browser-overlay");
+  overlay.style.display = "";
+  fbShowHidden = false;
+  document.getElementById("fb-show-hidden").checked = false;
+  fetchBrowse(fbPrevSelectValue || "");
+}
+
+function closeFolderBrowser() {
+  document.getElementById("folder-browser-overlay").style.display = "none";
+  // If user cancelled without selecting, revert select to its previous state
+  const sel = document.getElementById("cwd-select");
+  if (sel.value === "__new__") sel.value = fbPrevSelectValue;
+}
+
+function fbOverlayClick(e) {
+  if (e.target === e.currentTarget) closeFolderBrowser();
+}
+
+async function fetchBrowse(path) {
+  const gen = ++fbFetchGen;
+  const params = new URLSearchParams();
+  if (path) params.set("path", path);
+  if (fbShowHidden) params.set("showHidden", "true");
+  try {
+    const res = await fetch("/browse?" + params).then((r) => r.json());
+    if (gen !== fbFetchGen) return;
+    fbCurrentPath = res.path;
+    renderFbBreadcrumb(res.path);
+    renderFbList(res.dirs, res.error);
+  } catch {
+    // ignore network errors during navigation
+  }
+}
+
+function renderFbBreadcrumb(fullPath) {
+  const el = document.getElementById("fb-breadcrumb");
+  const segments = [];
+
+  if (fbHome && (fullPath === fbHome || fullPath.startsWith(fbHome + "/"))) {
+    segments.push({ label: "~", path: fbHome });
+    const rest = fullPath.slice(fbHome.length).split("/").filter(Boolean);
+    rest.forEach((part, i) => {
+      segments.push({ label: part, path: fbHome + "/" + rest.slice(0, i + 1).join("/") });
+    });
+  } else {
+    segments.push({ label: "/", path: "/" });
+    const parts = fullPath.split("/").filter(Boolean);
+    parts.forEach((part, i) => {
+      segments.push({ label: part, path: "/" + parts.slice(0, i + 1).join("/") });
+    });
+  }
+
+  let html = "";
+  segments.forEach(({ label, path }, i) => {
+    if (i > 0) html += `<span class="fb-breadcrumb-sep">/</span>`;
+    html += `<span class="fb-breadcrumb-segment" data-path="${escHtml(path)}">${escHtml(label)}</span>`;
+  });
+  el.innerHTML = html;
+  el.querySelectorAll(".fb-breadcrumb-segment").forEach((seg) => {
+    seg.addEventListener("click", () => fetchBrowse(seg.dataset.path));
+  });
+}
+
+function renderFbList(dirs, error) {
+  const el = document.getElementById("fb-list");
+  // Preserve any in-progress new-folder input
+  const existingInput = el.querySelector(".fb-new-folder-row");
+  el.innerHTML = "";
+  if (existingInput) el.appendChild(existingInput);
+
+  if (error) {
+    const errDiv = document.createElement("div");
+    errDiv.className = "fb-error";
+    errDiv.textContent = error;
+    el.appendChild(errDiv);
+  }
+
+  if (fbCurrentPath && fbCurrentPath !== "/") {
+    const upItem = document.createElement("div");
+    upItem.className = "fb-dir-item";
+    upItem.innerHTML = `<span class="fb-dir-icon">📁</span><span class="fb-dir-name">..</span>`;
+    upItem.addEventListener("click", () => {
+      const parent = fbCurrentPath.replace(/\/[^/]+$/, "") || "/";
+      fetchBrowse(parent);
+    });
+    el.appendChild(upItem);
+  }
+
+  if (dirs.length === 0 && !error) {
+    const empty = document.createElement("div");
+    empty.className = "fb-empty";
+    empty.textContent = "No subdirectories";
+    el.appendChild(empty);
+  }
+
+  for (const dir of dirs) {
+    const item = document.createElement("div");
+    item.className = "fb-dir-item";
+    item.innerHTML = `<span class="fb-dir-icon">📁</span><span class="fb-dir-name">${escHtml(dir)}</span>`;
+    const fullPath = (fbCurrentPath === "/" ? "" : fbCurrentPath) + "/" + dir;
+    item.addEventListener("click", () => fetchBrowse(fullPath));
+    el.appendChild(item);
+  }
+}
+
+
+function fbSelectFolder() {
+  const sel = document.getElementById("cwd-select");
+  // Add the path as an option if it isn't already there
+  if (!Array.from(sel.options).some((o) => o.value === fbCurrentPath)) {
+    const opt = document.createElement("option");
+    opt.value = fbCurrentPath;
+    opt.textContent = displayPath(fbCurrentPath);
+    sel.insertBefore(opt, sel.querySelector('option[value="__new__"]'));
+  }
+  sel.value = fbCurrentPath;
+  fbPrevSelectValue = fbCurrentPath;
+  document.getElementById("folder-browser-overlay").style.display = "none";
+}
+
+function fbToggleHidden() {
+  fbShowHidden = document.getElementById("fb-show-hidden").checked;
+  fetchBrowse(fbCurrentPath);
+}
+
+function fbNewFolder() {
+  const list = document.getElementById("fb-list");
+  if (list.querySelector(".fb-new-folder-row")) return;
+  const row = document.createElement("div");
+  row.className = "fb-new-folder-row";
+  row.innerHTML = `<span class="fb-dir-icon">📁</span><input class="fb-new-folder-input" placeholder="New folder name...">`;
+  list.prepend(row);
+  const inp = row.querySelector("input");
+  inp.focus();
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") fbCreateFolder(inp.value);
+    if (e.key === "Escape") row.remove();
+  });
+}
+
+async function fbCreateFolder(name) {
+  name = name.trim();
+  if (!name) return;
+  const fullPath = (fbCurrentPath === "/" ? "" : fbCurrentPath) + "/" + name;
+  const res = await fetch("/mkdir", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: fullPath }),
+  });
+  if (res.ok) {
+    fetchBrowse(fbCurrentPath);
+  } else {
+    const err = await res.json().catch(() => ({}));
+    alert(err.error || "Failed to create folder");
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  const overlay = document.getElementById("folder-browser-overlay");
+  if (e.key === "Escape" && overlay && overlay.style.display !== "none") {
+    closeFolderBrowser();
+  }
+});
 
 function escHtml(s) {
   return String(s)
@@ -1137,6 +1316,7 @@ function initSSE() {
     const list = data.sessions;
     archivedCount = data.archivedCount;
     if (data.slashCommands) slashCommands = data.slashCommands;
+    if (data.home) fbHome = data.home;
     list.forEach((j) => {
       sessions[j.id] = j;
     });
@@ -1393,11 +1573,7 @@ async function sendFollowUp(id) {
 async function submitJob() {
   const prompt = document.getElementById("prompt").value.trim();
   if (!prompt) return;
-  const cwdSel = document.getElementById("cwd-select");
-  const cwdVal =
-    cwdSel.value === "__new__"
-      ? document.getElementById("cwd-custom").value.trim()
-      : cwdSel.value;
+  const cwdVal = document.getElementById("cwd-select").value || "";
   const useWorktree = document.getElementById("use-worktree").checked;
   const body = cwdVal
     ? {
