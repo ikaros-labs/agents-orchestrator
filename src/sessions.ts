@@ -391,9 +391,16 @@ async function runQueryStream(
       JSON.stringify({ ts, ...message }) + "\n",
     );
     if (message.type === "assistant" && message.message?.content) {
+      const parentToolUseId: string | undefined =
+        message.parent_tool_use_id || undefined;
       for (const block of message.message.content) {
         if ("text" in block) {
-          store.appendChat(id, { type: "text", text: block.text, ts });
+          store.appendChat(id, {
+            type: "text",
+            text: block.text,
+            ts,
+            parentToolUseId,
+          });
         } else if ("name" in block) {
           const toolUseId: string | undefined = (block as any).id;
           store.appendChat(id, {
@@ -402,6 +409,7 @@ async function runQueryStream(
             input: (block as any).input,
             toolUseId,
             ts,
+            parentToolUseId,
           });
           if (toolUseId) {
             const session = store.getSession(id);
@@ -422,6 +430,7 @@ async function runQueryStream(
               mediaType: b.source.media_type,
               url,
               ts,
+              parentToolUseId,
             });
           }
         }

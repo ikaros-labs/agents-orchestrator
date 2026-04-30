@@ -404,6 +404,14 @@ function renderBashTool(e) {
   </details>`;
 }
 
+function wrapWithNesting(html, entry) {
+  if (!html || !entry.parentToolUseId) return html;
+  return html.replace(
+    /^(<\w+)/,
+    `$1 data-parent-tool-use-id="${escHtml(entry.parentToolUseId)}"`,
+  );
+}
+
 function renderChatEntry(e, cwd) {
   if (e.type === "user") {
     return `<div class="chat-user">${escHtml(e.text)}</div>`;
@@ -415,6 +423,12 @@ function renderChatEntry(e, cwd) {
     if (e.name === "ExitPlanMode") return "";
     if (e.name === "TodoWrite") return renderTodoWrite(e.input?.todos);
     if (e.name === "Bash") return renderBashTool(e);
+    if (e.name === "Agent") {
+      const desc = e.input?.description
+        ? ` <span class="tool-detail">${escHtml(String(e.input.description).slice(0, 120))}</span>`
+        : "";
+      return `<div class="chat-tool chat-tool-agent"${e.toolUseId ? ` data-tool-use-id="${escHtml(e.toolUseId)}"` : ""}>Agent${desc}</div>`;
+    }
     return `<div class="chat-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
   if (e.type === "image") {
@@ -860,7 +874,8 @@ function renderDetail(job) {
   const cwd = job.worktreePath ?? job.cwd;
   const chatHtml = job.chat
     .map((e) => {
-      const html = renderChatEntry(e, cwd);
+      let html = renderChatEntry(e, cwd);
+      html = wrapWithNesting(html, e);
       if (e.type === "tool_call" && e.name === "ExitPlanMode")
         return html + renderPlanCard(e.input?.plan);
       return html;
@@ -1001,6 +1016,7 @@ function appendChatEntryDOM(entry, jobId, index) {
     sessions[jobId]?.worktreePath ?? sessions[jobId]?.cwd,
   );
   if (!html) return;
+  html = wrapWithNesting(html, entry);
   // Inject data-chat-index into the root element so we can find it for updates
   if (index !== undefined) {
     html = html.replace(/^(<\w+)/, `$1 data-chat-index="${index}"`);

@@ -14,8 +14,8 @@ export type SessionEffort = "low" | "medium" | "high" | "max";
 export type SandboxMode = "none" | "sandbox" | "docker" | "yolo";
 
 export type ChatEntry =
-  | { type: "text"; text: string; ts: string }
-  | { type: "user"; text: string; ts: string }
+  | { type: "text"; text: string; ts: string; parentToolUseId?: string }
+  | { type: "user"; text: string; ts: string; parentToolUseId?: string }
   | {
       type: "tool_call";
       name: string;
@@ -23,8 +23,9 @@ export type ChatEntry =
       toolUseId?: string;
       output?: string;
       ts: string;
+      parentToolUseId?: string;
     }
-  | { type: "image"; mediaType: string; url: string; ts: string };
+  | { type: "image"; mediaType: string; url: string; ts: string; parentToolUseId?: string };
 
 export interface InputFile {
   mediaType: string;
