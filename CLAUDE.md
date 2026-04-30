@@ -27,14 +27,30 @@ PID is stored in `/tmp/agents-orchestrator/server.pid`; logs go to `/tmp/agents-
 
 ### Testing your changes
 
-After finishing a task, use `dev-server.sh` — it starts a throwaway dev server on a random port so it never conflicts with anything else. Multiple can run simultaneously.
+Run `dev-server.sh` to start a throwaway dev server on a random port. The script runs in the foreground, prints connection info, and exits — do **NOT** background it with `&`.
 
 ```bash
 ./dev-server.sh                          # start from current worktree
 ./dev-server.sh /path/to/other-worktree  # start from a specific worktree
+./dev-server.sh --stop                   # stop the server for this directory
+./dev-server.sh --status                 # check if a server is already running
 ```
 
-This picks a random port in the 3100–19999 range, installs deps, starts bun in watch mode, and auto-exits after 4 hours. The URL is printed on startup.
+The script outputs a structured block you can parse directly:
+
+```
+---DEV-SERVER-INFO---
+STATUS=running
+URL=http://127.0.0.1:17432
+PORT=17432
+PID=208778
+LOG=/tmp/agents-orchestrator/dev-server-aBcDeF.log
+DATA_DIR=/home/user/.dev-agents-orchestrator
+WORKTREE=/path/to/worktree
+---END-DEV-SERVER-INFO---
+```
+
+Multiple dev servers can run simultaneously (each gets a random port in 3100–19999). Servers auto-exit after 4 hours. Re-running in the same directory kills the previous instance.
 
 ### Browser/UI testing
 
