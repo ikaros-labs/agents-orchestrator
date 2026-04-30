@@ -1127,7 +1127,7 @@ function renderDetail(job) {
     ${hasCwd ? `<div class="detail-tab-pane file-browser${activeDetailTab === "files" ? "" : " hidden"}" id="files-pane">
       <div class="file-browser-tree" id="file-browser-tree"><div class="file-tree-loading">Loading…</div></div>
       <div class="file-browser-viewer" id="file-browser-viewer">
-        <div class="file-viewer-header" id="file-viewer-header">Select a file to view</div>
+        <div class="file-viewer-header" id="file-viewer-header"><span id="file-viewer-path">Select a file to view</span></div>
         <div class="file-viewer-content" id="file-viewer-content"></div>
       </div>
     </div>` : ""}
@@ -1961,9 +1961,13 @@ async function openTreeFile(sessionId, filePath) {
   const contentEl = document.getElementById("file-viewer-content");
   if (!headerEl || !contentEl) return;
 
-  headerEl.textContent = filePath;
+  const pathEl = document.getElementById("file-viewer-path");
+  if (pathEl) pathEl.textContent = filePath;
   contentEl.innerHTML = `<div class="file-viewer-loading">Loading…</div>`;
   if (window.destroyCodeViewer) window.destroyCodeViewer();
+
+  // Remove any existing save button before adding a new one
+  headerEl.querySelector(".file-save-btn")?.remove();
 
   try {
     const resp = await fetch(`/sessions/${sessionId}/file-content?path=${encodeURIComponent(filePath)}`);
@@ -1979,18 +1983,64 @@ async function openTreeFile(sessionId, filePath) {
       if (window.initCodeViewer) {
         window.initCodeViewer("cm-editor", data.content, filePath.split("/").pop() ?? filePath);
       } else {
-        // Fallback: plain preformatted text
         const pre = document.createElement("pre");
         pre.className = "file-viewer-plain";
         pre.textContent = data.content;
         contentEl.innerHTML = "";
         contentEl.appendChild(pre);
       }
+      // Add save button
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "file-save-btn";
+      saveBtn.textContent = "Save";
+      saveBtn.onclick = () => saveFile(sessionId, filePath, saveBtn);
+      headerEl.appendChild(saveBtn);
     }
   } catch (err) {
     contentEl.innerHTML = `<div class="file-viewer-message file-viewer-error">Error loading file: ${escHtml(String(err))}</div>`;
   }
 }
+
+async function saveFile(sessionId, filePath, btn) {
+  const content = window.getEditorContent?.();
+  if (content === null || content === undefined) return;
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+  try {
+    const resp = await fetch(`/sessions/${sessionId}/file-content?path=${encodeURIComponent(filePath)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    btn.textContent = "Saved ✓";
+    btn.classList.add("saved");
+    setTimeout(() => {
+      btn.textContent = "Save";
+      btn.classList.remove("saved");
+      btn.disabled = false;
+    }, 2000);
+  } catch (err) {
+    btn.textContent = "Error";
+    btn.classList.add("error");
+    setTimeout(() => {
+      btn.textContent = "Save";
+      btn.classList.remove("error");
+      btn.disabled = false;
+    }, 2000);
+  }
+}
+
+// Cmd/Ctrl+S saves the currently open file
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "s" && selectedFile) {
+    const saveBtn = document.querySelector(".file-save-btn");
+    if (saveBtn && !saveBtn.disabled) {
+      e.preventDefault();
+      saveFile(selectedFile.sessionId, selectedFile.path, saveBtn);
+    }
+  }
+});
 
 function refreshFileTree(sessionId) {
   delete fileTreeCache[sessionId];

@@ -210,40 +210,69 @@ Bun.serve({
         return Response.json({ basePath: root, relativePath, entries, truncated: rawEntries.length > 1000 });
       }),
 
-    "/sessions/:id/file-content": async (req) =>
-      withSession(req, async (_, session) => {
-        const url = new URL(req.url);
-        const userPath = url.searchParams.get("path");
-        if (!userPath) return jsonError(400, "Missing path parameter");
-        const result = resolveSessionPath(session, userPath);
-        if (result instanceof Response) return result;
-        const { resolved } = result;
+    "/sessions/:id/file-content": {
+      GET: async (req) =>
+        withSession(req, async (_, session) => {
+          const url = new URL(req.url);
+          const userPath = url.searchParams.get("path");
+          if (!userPath) return jsonError(400, "Missing path parameter");
+          const result = resolveSessionPath(session, userPath);
+          if (result instanceof Response) return result;
+          const { resolved } = result;
 
-        let info: Awaited<ReturnType<typeof stat>>;
-        try {
-          info = await stat(resolved);
-        } catch {
-          return jsonError(404, "File not found");
-        }
-        if (!info.isFile()) return jsonError(400, "Path is not a file");
+          let info: Awaited<ReturnType<typeof stat>>;
+          try {
+            info = await stat(resolved);
+          } catch {
+            return jsonError(404, "File not found");
+          }
+          if (!info.isFile()) return jsonError(400, "Path is not a file");
 
-        const MAX_SIZE = 1_000_000; // 1MB
-        if (info.size > MAX_SIZE) {
-          return Response.json({ path: userPath, content: null, size: info.size, binary: false, truncated: true });
-        }
+          const MAX_SIZE = 1_000_000;
+          if (info.size > MAX_SIZE) {
+            return Response.json({ path: userPath, content: null, size: info.size, binary: false, truncated: true });
+          }
 
-        if (await isBinaryFile(resolved)) {
-          return Response.json({ path: userPath, content: null, size: info.size, binary: true });
-        }
+          if (await isBinaryFile(resolved)) {
+            return Response.json({ path: userPath, content: null, size: info.size, binary: true });
+          }
 
-        let content: string;
-        try {
-          content = await readFile(resolved, "utf-8");
-        } catch {
-          return jsonError(500, "Failed to read file");
-        }
-        return Response.json({ path: userPath, content, size: info.size, binary: false });
-      }),
+          let content: string;
+          try {
+            content = await readFile(resolved, "utf-8");
+          } catch {
+            return jsonError(500, "Failed to read file");
+          }
+          return Response.json({ path: userPath, content, size: info.size, binary: false });
+        }),
+
+      PUT: async (req) =>
+        withSession(req, async (_, session) => {
+          const url = new URL(req.url);
+          const userPath = url.searchParams.get("path");
+          if (!userPath) return jsonError(400, "Missing path parameter");
+          const result = resolveSessionPath(session, userPath);
+          if (result instanceof Response) return result;
+          const { resolved } = result;
+
+          let body: { content: string };
+          try {
+            body = await req.json();
+          } catch {
+            return jsonError(400, "Invalid JSON body");
+          }
+          if (typeof body?.content !== "string") {
+            return jsonError(400, "Missing content field");
+          }
+
+          try {
+            await Bun.write(resolved, body.content);
+          } catch {
+            return jsonError(500, "Failed to write file");
+          }
+          return Response.json({ ok: true, path: userPath, size: body.content.length });
+        }),
+    },
 
     // ── Saved images / documents ───────────────────────────────────────────
 

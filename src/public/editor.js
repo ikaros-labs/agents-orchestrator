@@ -50,8 +50,6 @@ window.initCodeViewer = function (containerId, content, filename) {
   const langFn = LANG_MAP[ext];
 
   const extensions = [
-    EditorView.editable.of(false),
-    EditorState.readOnly.of(true),
     oneDark,
     lineNumbers(),
     highlightActiveLine(),
@@ -70,6 +68,10 @@ window.initCodeViewer = function (containerId, content, filename) {
     state: EditorState.create({ doc: content, extensions }),
     parent: container,
   });
+};
+
+window.getEditorContent = function () {
+  return currentView ? currentView.state.doc.toString() : null;
 };
 
 window.destroyCodeViewer = function () {

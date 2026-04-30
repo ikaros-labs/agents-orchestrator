@@ -1857,17 +1857,39 @@ details.chat-tool-bash[open] > summary {
 
 /* File viewer */
 .file-viewer-header {
-  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
   font-size: 11px;
   font-family: monospace;
   color: #888;
   border-bottom: 1px solid #1e1e1e;
   flex-shrink: 0;
   background: #0a0a0a;
-  white-space: nowrap;
+}
+#file-viewer-path {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.file-save-btn {
+  flex-shrink: 0;
+  background: #1a2a4a;
+  color: #6b9eff;
+  border: 1px solid #2a3a6a;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+.file-save-btn:hover:not(:disabled) { background: #2a3a6a; }
+.file-save-btn:disabled { opacity: 0.5; cursor: default; }
+.file-save-btn.saved { background: #1a3a2a; color: #4ade80; border-color: #2a5a3a; }
+.file-save-btn.error { background: #3a1a1a; color: #f87171; border-color: #5a2a2a; }
 .file-viewer-content {
   flex: 1;
   overflow: hidden;
