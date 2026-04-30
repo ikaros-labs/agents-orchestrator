@@ -427,7 +427,7 @@ function renderChatEntry(e, cwd) {
       const desc = e.input?.description
         ? ` <span class="tool-detail">${escHtml(String(e.input.description).slice(0, 120))}</span>`
         : "";
-      return `<div class="chat-tool chat-tool-agent"${e.toolUseId ? ` data-tool-use-id="${escHtml(e.toolUseId)}"` : ""}>Agent${desc}</div>`;
+      return `<div class="chat-tool chat-tool-agent"${e.toolUseId ? ` data-tool-use-id="${escHtml(e.toolUseId)}"` : ""}>Agent —${desc}</div>`;
     }
     return `<div class="chat-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
@@ -860,6 +860,39 @@ function attachTextareaListeners(jobId) {
   }
 }
 
+// ── Agent collapse ──────────────────────────────────────────────────────────
+const collapsedAgents = new Set(); // toolUseIds of collapsed Agent entries
+
+function applyAgentCollapseState(feed) {
+  for (const id of collapsedAgents) {
+    const agentEl = feed.querySelector(`.chat-tool-agent[data-tool-use-id="${CSS.escape(id)}"]`);
+    if (agentEl) agentEl.classList.add("collapsed");
+    feed.querySelectorAll(`[data-parent-tool-use-id="${CSS.escape(id)}"]`).forEach((el) => {
+      el.style.display = "none";
+    });
+  }
+}
+
+function toggleAgentCollapse(agentEl) {
+  const id = agentEl.dataset.toolUseId;
+  if (!id) return;
+  const feed = agentEl.closest("#chat-feed");
+  if (!feed) return;
+  if (collapsedAgents.has(id)) {
+    collapsedAgents.delete(id);
+    agentEl.classList.remove("collapsed");
+    feed.querySelectorAll(`[data-parent-tool-use-id="${CSS.escape(id)}"]`).forEach((el) => {
+      el.style.display = "";
+    });
+  } else {
+    collapsedAgents.add(id);
+    agentEl.classList.add("collapsed");
+    feed.querySelectorAll(`[data-parent-tool-use-id="${CSS.escape(id)}"]`).forEach((el) => {
+      el.style.display = "none";
+    });
+  }
+}
+
 function renderDetail(job) {
   if (!job) {
     document.getElementById("detail").innerHTML =
@@ -898,6 +931,7 @@ function renderDetail(job) {
 
   restoreScrollState(scrollState);
   restoreInputState(inputState, job.id);
+  applyAgentCollapseState(document.getElementById("chat-feed"));
   // Re-render any pending image previews (they live outside the rebuilt HTML)
   renderRevisePreviews(job.id);
   renderFollowupPreviews(job.id);
@@ -1052,6 +1086,11 @@ function appendChatEntryDOM(entry, jobId, index) {
   const wasAtBottom =
     feed.scrollHeight - feed.clientHeight - feed.scrollTop <= 80;
   feed.insertAdjacentHTML("beforeend", html);
+  const newEl = feed.lastElementChild;
+  if (newEl) {
+    const parentId = newEl.dataset.parentToolUseId;
+    if (parentId && collapsedAgents.has(parentId)) newEl.style.display = "none";
+  }
   if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
 }
 
@@ -1386,6 +1425,11 @@ async function submitJob() {
 
 document.getElementById("prompt").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitJob();
+});
+
+document.addEventListener("click", (e) => {
+  const agentEl = e.target.closest(".chat-tool-agent");
+  if (agentEl && agentEl.dataset.toolUseId) toggleAgentCollapse(agentEl);
 });
 
 document.addEventListener("keydown", (e) => {
