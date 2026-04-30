@@ -38,6 +38,12 @@ let archivedCount = 0;
 const approvalModels = {}; // sessionId → model selected for execution at approval time
 let slashCommands = []; // { name, description, argumentHint }
 
+// ── File browser state ──────────────────────────────────────────────────────
+let activeDetailTab = "chat"; // "chat" | "files"
+const fileTreeCache = {}; // sessionId → { [dirPath]: entries[] }
+const expandedDirs = {}; // sessionId → Set of expanded dir paths
+let selectedFile = null; // { sessionId, path }
+
 // ── File attachment state ───────────────────────────────────────────────────
 let pendingFiles = []; // { mediaType, data, objectUrl, name }
 
@@ -921,12 +927,31 @@ function renderDetail(job) {
     renderResultBox(job) +
     renderQuestionBar(job);
 
+  const effectiveCwd = job.worktreePath ?? job.cwd;
+  const hasCwd = !!effectiveCwd;
+  const tabsHtml = hasCwd
+    ? `<div class="detail-tabs">
+        <button class="detail-tab${activeDetailTab === "chat" ? " active" : ""}" onclick="setDetailTab('chat')">Chat</button>
+        <button class="detail-tab${activeDetailTab === "files" ? " active" : ""}" onclick="setDetailTab('files')">Files</button>
+      </div>`
+    : "";
+
   document.getElementById("detail").innerHTML = `
     ${renderDetailHeader(job)}
-    <div class="chat-feed" id="chat-feed">${feedHtml}</div>
-    ${renderApproveBar(job)}
-    ${renderToolApprovalBar(job)}
-    ${renderFollowUpBar(job)}
+    ${tabsHtml}
+    <div class="detail-tab-pane${activeDetailTab === "chat" || !hasCwd ? "" : " hidden"}" id="chat-pane">
+      <div class="chat-feed" id="chat-feed">${feedHtml}</div>
+      ${renderApproveBar(job)}
+      ${renderToolApprovalBar(job)}
+      ${renderFollowUpBar(job)}
+    </div>
+    ${hasCwd ? `<div class="detail-tab-pane file-browser${activeDetailTab === "files" ? "" : " hidden"}" id="files-pane">
+      <div class="file-browser-tree" id="file-browser-tree"><div class="file-tree-loading">Loading…</div></div>
+      <div class="file-browser-viewer" id="file-browser-viewer">
+        <div class="file-viewer-header" id="file-viewer-header">Select a file to view</div>
+        <div class="file-viewer-content" id="file-viewer-content"></div>
+      </div>
+    </div>` : ""}
   `;
 
   restoreScrollState(scrollState);
@@ -936,6 +961,10 @@ function renderDetail(job) {
   renderRevisePreviews(job.id);
   renderFollowupPreviews(job.id);
   attachTextareaListeners(job.id);
+
+  if (hasCwd && activeDetailTab === "files") {
+    loadFileTree(job.id);
+  }
 }
 
 // ── Follow-up / revise file handling ──────────────────────────────────────
@@ -1005,6 +1034,11 @@ function removeReviseImage(jobId, index) {
 
 // ── API actions ────────────────────────────────────────────────────────────
 async function selectJob(id) {
+  if (selectedId !== id) {
+    activeDetailTab = "chat";
+    selectedFile = null;
+    if (window.destroyCodeViewer) window.destroyCodeViewer();
+  }
   selectedId = id;
   history.replaceState(null, "", "#" + id);
   document
@@ -1616,6 +1650,179 @@ document.addEventListener("mouseover", (e) => {
     updateActiveClass();
   }
 });
+
+// ── File browser ─────────────────────────────────────────────────────────────
+
+function setDetailTab(tab) {
+  activeDetailTab = tab;
+  const chatPane = document.getElementById("chat-pane");
+  const filesPane = document.getElementById("files-pane");
+  document.querySelectorAll(".detail-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.textContent.trim().toLowerCase() === tab);
+  });
+  if (chatPane) chatPane.classList.toggle("hidden", tab !== "chat");
+  if (filesPane) filesPane.classList.toggle("hidden", tab !== "files");
+  if (tab === "files" && selectedId) loadFileTree(selectedId);
+}
+
+async function fetchDirEntries(sessionId, dirPath) {
+  if (!fileTreeCache[sessionId]) fileTreeCache[sessionId] = {};
+  if (fileTreeCache[sessionId][dirPath] !== undefined) {
+    return fileTreeCache[sessionId][dirPath];
+  }
+  const resp = await fetch(`/sessions/${sessionId}/files?path=${encodeURIComponent(dirPath)}`);
+  if (!resp.ok) throw new Error(await resp.text());
+  const data = await resp.json();
+  fileTreeCache[sessionId][dirPath] = data.entries;
+  return data.entries;
+}
+
+function getFileIcon(name, isDir) {
+  if (isDir) return "▸";
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (["js", "ts", "jsx", "tsx", "mjs", "cjs", "mts"].includes(ext)) return "JS";
+  if (["json", "jsonc"].includes(ext)) return "{}";
+  if (["md", "markdown"].includes(ext)) return "MD";
+  if (["css", "scss", "less"].includes(ext)) return "CS";
+  if (["html", "htm"].includes(ext)) return "HT";
+  if (["py"].includes(ext)) return "PY";
+  if (["rs"].includes(ext)) return "RS";
+  if (["sh", "bash", "zsh"].includes(ext)) return "SH";
+  if (["yml", "yaml"].includes(ext)) return "YM";
+  return "  ";
+}
+
+function jsStr(s) {
+  // Escape a string for safe embedding inside a single-quoted JS string in an HTML attribute
+  return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function renderTreeEntries(sessionId, entries, parentPath, depth) {
+  return entries.map((entry) => {
+    const entryPath = parentPath === "." ? entry.name : `${parentPath}/${entry.name}`;
+    const isDir = entry.type === "directory";
+    const expanded = expandedDirs[sessionId]?.has(entryPath);
+    const isSelected = selectedFile?.sessionId === sessionId && selectedFile?.path === entryPath;
+    const indent = depth * 14;
+    const icon = isDir ? (expanded ? "▾" : "▸") : getFileIcon(entry.name, false);
+    const iconClass = isDir ? "file-icon dir-icon" : "file-icon";
+    const action = isDir
+      ? `toggleTreeDir('${jsStr(sessionId)}', '${jsStr(entryPath)}')`
+      : `openTreeFile('${jsStr(sessionId)}', '${jsStr(entryPath)}')`;
+
+    const row = `<div class="file-tree-entry${isSelected ? " selected" : ""}" data-path="${escHtml(entryPath)}" onclick="${action}" style="padding-left:${8 + indent}px">
+      <span class="${iconClass}">${icon}</span>
+      <span class="file-name">${escHtml(entry.name)}</span>
+    </div>`;
+
+    const childrenId = `ftc-${sessionId}-${entryPath.replace(/[^a-z0-9]/gi, "_")}`;
+    const childrenHtml = isDir
+      ? `<div class="file-tree-children" id="${childrenId}" style="display:${expanded ? "block" : "none"}"></div>`
+      : "";
+
+    return row + childrenHtml;
+  }).join("");
+}
+
+async function loadFileTree(sessionId) {
+  const treeEl = document.getElementById("file-browser-tree");
+  if (!treeEl) return;
+  if (!expandedDirs[sessionId]) expandedDirs[sessionId] = new Set();
+
+  try {
+    const entries = await fetchDirEntries(sessionId, ".");
+    treeEl.innerHTML = `
+      <div class="file-tree-header">
+        <span class="file-tree-root">${escHtml(sessions[sessionId]?.worktreePath ?? sessions[sessionId]?.cwd ?? "")}</span>
+        <button class="file-tree-refresh" onclick="refreshFileTree('${sessionId}')" title="Refresh">↻</button>
+      </div>
+      <div class="file-tree-entries" id="file-tree-entries">${renderTreeEntries(sessionId, entries, ".", 0)}</div>
+    `;
+  } catch (err) {
+    treeEl.innerHTML = `<div class="file-tree-error">Failed to load files: ${escHtml(String(err))}</div>`;
+  }
+}
+
+async function toggleTreeDir(sessionId, dirPath) {
+  if (!expandedDirs[sessionId]) expandedDirs[sessionId] = new Set();
+  const childrenId = `ftc-${sessionId}-${dirPath.replace(/[^a-z0-9]/gi, "_")}`;
+  const childrenEl = document.getElementById(childrenId);
+  const entryEl = document.querySelector(`.file-tree-entry[data-path="${CSS.escape(dirPath)}"]`);
+
+  if (expandedDirs[sessionId].has(dirPath)) {
+    expandedDirs[sessionId].delete(dirPath);
+    if (childrenEl) childrenEl.style.display = "none";
+    if (entryEl) entryEl.querySelector(".file-icon").textContent = "▸";
+  } else {
+    expandedDirs[sessionId].add(dirPath);
+    if (entryEl) entryEl.querySelector(".file-icon").textContent = "▾";
+    if (childrenEl) {
+      if (!fileTreeCache[sessionId]?.[dirPath]) {
+        childrenEl.innerHTML = `<div class="file-tree-loading" style="padding-left:${8 + (dirPath.split("/").length) * 14}px">Loading…</div>`;
+        childrenEl.style.display = "block";
+        try {
+          const entries = await fetchDirEntries(sessionId, dirPath);
+          const depth = dirPath.split("/").length;
+          childrenEl.innerHTML = renderTreeEntries(sessionId, entries, dirPath, depth);
+        } catch {
+          childrenEl.innerHTML = `<div class="file-tree-error">Failed to load</div>`;
+        }
+      } else {
+        childrenEl.style.display = "block";
+      }
+    }
+  }
+}
+
+async function openTreeFile(sessionId, filePath) {
+  // Update selected state
+  document.querySelectorAll(".file-tree-entry.selected").forEach((el) => el.classList.remove("selected"));
+  const entryEl = document.querySelector(`.file-tree-entry[data-path="${CSS.escape(filePath)}"]`);
+  if (entryEl) entryEl.classList.add("selected");
+  selectedFile = { sessionId, path: filePath };
+
+  const headerEl = document.getElementById("file-viewer-header");
+  const contentEl = document.getElementById("file-viewer-content");
+  if (!headerEl || !contentEl) return;
+
+  headerEl.textContent = filePath;
+  contentEl.innerHTML = `<div class="file-viewer-loading">Loading…</div>`;
+  if (window.destroyCodeViewer) window.destroyCodeViewer();
+
+  try {
+    const resp = await fetch(`/sessions/${sessionId}/file-content?path=${encodeURIComponent(filePath)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    if (data.binary) {
+      contentEl.innerHTML = `<div class="file-viewer-message">Binary file — cannot display</div>`;
+    } else if (data.truncated) {
+      contentEl.innerHTML = `<div class="file-viewer-message">File too large to display (${(data.size / 1024 / 1024).toFixed(1)} MB)</div>`;
+    } else {
+      contentEl.innerHTML = `<div id="cm-editor" style="height:100%"></div>`;
+      if (window.initCodeViewer) {
+        window.initCodeViewer("cm-editor", data.content, filePath.split("/").pop() ?? filePath);
+      } else {
+        // Fallback: plain preformatted text
+        const pre = document.createElement("pre");
+        pre.className = "file-viewer-plain";
+        pre.textContent = data.content;
+        contentEl.innerHTML = "";
+        contentEl.appendChild(pre);
+      }
+    }
+  } catch (err) {
+    contentEl.innerHTML = `<div class="file-viewer-message file-viewer-error">Error loading file: ${escHtml(String(err))}</div>`;
+  }
+}
+
+function refreshFileTree(sessionId) {
+  delete fileTreeCache[sessionId];
+  if (expandedDirs[sessionId]) expandedDirs[sessionId].clear();
+  if (window.destroyCodeViewer) window.destroyCodeViewer();
+  selectedFile = null;
+  loadFileTree(sessionId);
+}
 
 // Eagerly show the detail panel if a job hash is in the URL, to avoid the
 // flash of the new-task form before the SSE snapshot arrives.

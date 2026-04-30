@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { normalize, resolve } from "node:path";
 import type { z } from "zod";
 import logger from "./logger.ts";
 import {
@@ -73,6 +75,45 @@ async function parseBody<S extends z.ZodTypeAny>(
   return { data: result.data };
 }
 
+// ── File browser helpers ─────────────────────────────────────────────────────
+
+const BINARY_EXTENSIONS = new Set([
+  "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg",
+  "pdf", "zip", "gz", "tar", "bz2", "xz", "7z", "rar",
+  "mp4", "webm", "mov", "avi", "mkv", "mp3", "wav", "ogg", "flac",
+  "woff", "woff2", "ttf", "otf", "eot",
+  "exe", "dll", "so", "dylib", "bin", "dat", "db", "sqlite",
+]);
+
+function resolveSessionPath(
+  session: Session,
+  userPath: string,
+): { resolved: string; root: string } | Response {
+  const root = session.worktreePath ?? session.cwd;
+  if (!root) return jsonError(404, "Session has no working directory");
+  if (userPath.includes("\0")) return jsonError(400, "Invalid path");
+  // Resolve against root — handles both relative and absolute user paths
+  const resolved = normalize(resolve(root, userPath));
+  // Must be the root itself or a descendant
+  if (resolved !== root && !resolved.startsWith(root + "/")) {
+    return jsonError(403, "Path outside session working directory");
+  }
+  return { resolved, root };
+}
+
+async function isBinaryFile(filePath: string): Promise<boolean> {
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  if (BINARY_EXTENSIONS.has(ext)) return true;
+  // Sample first 8KB for null bytes
+  try {
+    const fd = await Bun.file(filePath).arrayBuffer();
+    const bytes = new Uint8Array(fd.slice(0, 8192));
+    return bytes.includes(0);
+  } catch {
+    return false;
+  }
+}
+
 // ── EXT → Content-Type map (for image serving) ───────────────────────────────
 
 const EXT_CONTENT_TYPE: Record<string, string> = {
@@ -115,6 +156,92 @@ Bun.serve({
           "Content-Type": "text/javascript",
           "Cache-Control": "no-store",
         },
+      }),
+
+    "/editor.js": () =>
+      new Response(Bun.file(new URL("./public/editor.js", import.meta.url)), {
+        headers: {
+          "Content-Type": "text/javascript",
+          "Cache-Control": "no-store",
+        },
+      }),
+
+    // ── File browser ────────────────────────────────────────────────────────
+
+    "/sessions/:id/files": async (req) =>
+      withSession(req, async (_, session) => {
+        const url = new URL(req.url);
+        const userPath = url.searchParams.get("path") ?? ".";
+        const result = resolveSessionPath(session, userPath);
+        if (result instanceof Response) return result;
+        const { resolved, root } = result;
+
+        let info: Awaited<ReturnType<typeof stat>>;
+        try {
+          info = await stat(resolved);
+        } catch {
+          return jsonError(404, "Path not found");
+        }
+        if (!info.isDirectory()) return jsonError(400, "Path is not a directory");
+
+        let rawEntries: Awaited<ReturnType<typeof readdir>>;
+        try {
+          rawEntries = await readdir(resolved, { withFileTypes: true });
+        } catch {
+          return jsonError(500, "Failed to read directory");
+        }
+
+        const entries = rawEntries
+          .filter((e) => e.name !== ".git")
+          .sort((a, b) => {
+            const aDir = a.isDirectory() ? 0 : 1;
+            const bDir = b.isDirectory() ? 0 : 1;
+            if (aDir !== bDir) return aDir - bDir;
+            return a.name.localeCompare(b.name);
+          })
+          .slice(0, 1000)
+          .map((e) => ({
+            name: e.name,
+            type: e.isDirectory() ? "directory" : "file",
+          }));
+
+        const relativePath = resolved === root ? "." : resolved.slice(root.length + 1);
+        return Response.json({ basePath: root, relativePath, entries, truncated: rawEntries.length > 1000 });
+      }),
+
+    "/sessions/:id/file-content": async (req) =>
+      withSession(req, async (_, session) => {
+        const url = new URL(req.url);
+        const userPath = url.searchParams.get("path");
+        if (!userPath) return jsonError(400, "Missing path parameter");
+        const result = resolveSessionPath(session, userPath);
+        if (result instanceof Response) return result;
+        const { resolved } = result;
+
+        let info: Awaited<ReturnType<typeof stat>>;
+        try {
+          info = await stat(resolved);
+        } catch {
+          return jsonError(404, "File not found");
+        }
+        if (!info.isFile()) return jsonError(400, "Path is not a file");
+
+        const MAX_SIZE = 1_000_000; // 1MB
+        if (info.size > MAX_SIZE) {
+          return Response.json({ path: userPath, content: null, size: info.size, binary: false, truncated: true });
+        }
+
+        if (await isBinaryFile(resolved)) {
+          return Response.json({ path: userPath, content: null, size: info.size, binary: true });
+        }
+
+        let content: string;
+        try {
+          content = await readFile(resolved, "utf-8");
+        } catch {
+          return jsonError(500, "Failed to read file");
+        }
+        return Response.json({ path: userPath, content, size: info.size, binary: false });
       }),
 
     // ── Saved images / documents ───────────────────────────────────────────
