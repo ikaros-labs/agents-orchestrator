@@ -1467,6 +1467,21 @@ let acTextarea = null;
 let acFiltered = [];
 let acIndex = 0;
 
+function getSlashPrefix(textarea) {
+  const val = textarea.value;
+  const cursor = textarea.selectionStart;
+  const textBefore = val.slice(0, cursor);
+  const match = textBefore.match(/(^|\s)(\/\S*)$/);
+  return match ? match[2] : null;
+}
+
+function updateActiveClass() {
+  if (!acDropdown) return;
+  acDropdown.querySelectorAll(".slash-ac-item").forEach((item, i) => {
+    item.classList.toggle("active", i === acIndex);
+  });
+}
+
 function ensureDropdown() {
   if (acDropdown) return acDropdown;
   const el = document.createElement("div");
@@ -1498,9 +1513,9 @@ function hideAutocomplete() {
 
 function updateAutocompleteFilter() {
   if (!acTextarea || !acDropdown) return;
-  const val = acTextarea.value;
-  if (!val.startsWith("/")) { hideAutocomplete(); return; }
-  const typed = val.split(/\s/)[0].slice(1).toLowerCase();
+  const slashWord = getSlashPrefix(acTextarea);
+  if (!slashWord) { hideAutocomplete(); return; }
+  const typed = slashWord.slice(1).toLowerCase();
   acFiltered = slashCommands.filter(cmd =>
     cmd.name.toLowerCase().includes(typed)
   );
@@ -1528,11 +1543,15 @@ function selectAutocomplete(index) {
   if (!acTextarea || !acFiltered[index]) return;
   const cmd = acFiltered[index];
   const val = acTextarea.value;
-  const spaceIdx = val.indexOf(" ");
-  const suffix = spaceIdx >= 0 ? val.slice(spaceIdx) : " ";
-  acTextarea.value = "/" + cmd.name + suffix;
-  const cursorPos = cmd.name.length + 2;
-  acTextarea.setSelectionRange(cursorPos, cursorPos);
+  const cursor = acTextarea.selectionStart;
+  const textBefore = val.slice(0, cursor);
+  const match = textBefore.match(/(^|\s)(\/\S*)$/);
+  if (!match) { hideAutocomplete(); return; }
+  const slashStart = textBefore.length - match[2].length;
+  const textAfter = val.slice(cursor);
+  acTextarea.value = val.slice(0, slashStart) + "/" + cmd.name + textAfter;
+  const newCursor = slashStart + cmd.name.length + 1;
+  acTextarea.setSelectionRange(newCursor, newCursor);
   acTextarea.focus();
   hideAutocomplete();
 }
@@ -1541,7 +1560,8 @@ document.addEventListener("input", (e) => {
   if (e.target.tagName !== "TEXTAREA") return;
   const ta = e.target;
   if (ta.id === "prompt" || ta.id.startsWith("followup-prompt-") || ta.id.startsWith("revise-prompt-")) {
-    if (ta.value.startsWith("/") && slashCommands.length > 0) {
+    const slashWord = getSlashPrefix(ta);
+    if (slashWord !== null && slashCommands.length > 0) {
       if (acTextarea !== ta) showAutocomplete(ta);
       else updateAutocompleteFilter();
     } else {
@@ -1593,7 +1613,7 @@ document.addEventListener("mouseover", (e) => {
   const item = e.target.closest(".slash-ac-item");
   if (item && acDropdown.contains(item)) {
     acIndex = Number(item.dataset.acIndex);
-    renderAutocomplete();
+    updateActiveClass();
   }
 });
 
