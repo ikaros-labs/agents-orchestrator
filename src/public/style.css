@@ -441,11 +441,16 @@ body {
 .chat-tool-agent {
   color: #a78bfa;
   font-weight: 600;
+  cursor: pointer;
+  user-select: none;
 }
 .chat-tool-agent::before {
-  content: "▸";
+  content: "▾";
   font-size: 10px;
   margin-right: 2px;
+}
+.chat-tool-agent.collapsed::before {
+  content: "▸";
 }
 /* Bash collapsible toggle */
 details.chat-tool-bash {
