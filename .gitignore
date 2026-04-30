@@ -4,3 +4,4 @@ logs
 data
 .playwright-cli
 .dev-server.pid
+.dev-server.info
