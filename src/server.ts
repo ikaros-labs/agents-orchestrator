@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { z } from "zod";
 import logger from "./logger.ts";
 import {
   AnswerQuestionSchema,
   ApproveSessionSchema,
+  CreateDirectorySchema,
   CreateSessionSchema,
   FollowUpSchema,
   ReviseSchema,
@@ -116,6 +120,56 @@ Bun.serve({
           "Cache-Control": "no-store",
         },
       }),
+
+    // ── Filesystem browsing ─────────────────────────────────────────────────
+
+    "/browse-directory": (req: Request) => {
+      const url = new URL(req.url);
+      const targetPath = resolve(url.searchParams.get("path") || homedir());
+      if (!targetPath.startsWith("/"))
+        return jsonError(400, "Path must be absolute");
+      try {
+        const entries = readdirSync(targetPath, { withFileTypes: true })
+          .filter((d) => d.isDirectory() && !d.name.startsWith("."))
+          .sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+          )
+          .map((d) => ({ name: d.name, path: join(targetPath, d.name) }));
+        return Response.json({ path: targetPath, entries });
+      } catch (e: any) {
+        const msg =
+          e.code === "EACCES"
+            ? "Permission denied"
+            : e.code === "ENOENT"
+              ? "Directory not found"
+              : "Cannot read directory";
+        return jsonError(400, msg);
+      }
+    },
+
+    "/create-directory": {
+      POST: async (req: Request) => {
+        const parsed = await parseBody(req, CreateDirectorySchema);
+        if (parsed instanceof Response) return parsed;
+        const { parent, name } = parsed.data;
+        const parentPath = resolve(parent);
+        if (!parentPath.startsWith("/"))
+          return jsonError(400, "Parent must be an absolute path");
+        const newPath = join(parentPath, name);
+        try {
+          mkdirSync(newPath);
+          return Response.json({ path: newPath });
+        } catch (e: any) {
+          const msg =
+            e.code === "EEXIST"
+              ? "Directory already exists"
+              : e.code === "EACCES"
+                ? "Permission denied"
+                : "Failed to create directory";
+          return jsonError(400, msg);
+        }
+      },
+    },
 
     // ── Saved images / documents ───────────────────────────────────────────
 

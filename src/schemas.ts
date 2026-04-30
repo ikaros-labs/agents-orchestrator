@@ -53,3 +53,12 @@ export const FollowUpSchema = z.object({
   prompt: z.string().trim().min(1, "prompt must be a non-empty string"),
   images: z.array(RawImageSchema).default([]),
 });
+
+export const CreateDirectorySchema = z.object({
+  parent: z.string().min(1, "parent must be a non-empty absolute path"),
+  name: z
+    .string()
+    .min(1, "name must be non-empty")
+    .regex(/^[^/\\]+$/, "name must not contain path separators")
+    .refine((n) => n !== ".." && n !== ".", "invalid directory name"),
+});

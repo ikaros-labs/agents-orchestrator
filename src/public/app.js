@@ -232,40 +232,53 @@ function setSandbox(sandbox) {
   });
 }
 
-function onCwdSelectChange() {
-  const sel = document.getElementById("cwd-select");
-  const inp = document.getElementById("cwd-custom");
-  const isNew = sel.value === "__new__";
-  inp.style.display = isNew ? "" : "none";
-  if (isNew) inp.focus();
-}
+// ── Folder browser state ──────────────────────────────────────────────────
+let folderBrowserPath = "";
+let folderBrowserSelected = "";
+let cwdHistory = [];
 
-function updateCwdSelect(list) {
-  const sel = document.getElementById("cwd-select");
+function updateCwdHistory(list) {
   const seen = new Set();
-  const dirs = [];
+  cwdHistory = [];
   for (const j of list) {
     if (j.cwd && !seen.has(j.cwd)) {
       seen.add(j.cwd);
-      dirs.push(j.cwd);
+      cwdHistory.push(j.cwd);
     }
   }
-  const current = sel.value;
-  Array.from(sel.options).forEach((o) => {
-    if (o.value !== "" && o.value !== "__new__") o.remove();
-  });
-  const addNewOpt = sel.querySelector('option[value="__new__"]');
-  dirs.forEach((dir) => {
-    const opt = document.createElement("option");
-    opt.value = dir;
-    opt.textContent = dir;
-    sel.insertBefore(opt, addNewOpt);
-  });
-  if (current && Array.from(sel.options).some((o) => o.value === current)) {
-    sel.value = current; // restore previous selection
-  } else if (!current && dirs.length) {
-    sel.value = dirs[0]; // default to most recent on first load
+}
+
+function setCwdValue(path) {
+  document.getElementById("cwd-value").value = path;
+  const textEl = document.getElementById("cwd-picker-text");
+  const clearEl = document.getElementById("cwd-picker-clear");
+  if (path) {
+    textEl.textContent = path;
+    textEl.classList.add("has-value");
+    clearEl.style.display = "";
+  } else {
+    textEl.textContent = "Working directory (optional)";
+    textEl.classList.remove("has-value");
+    clearEl.style.display = "none";
   }
+}
+
+function clearCwdSelection(event) {
+  event.stopPropagation();
+  setCwdValue("");
+}
+
+function openFolderBrowser() {
+  const currentVal = document.getElementById("cwd-value").value;
+  folderBrowserPath = currentVal || "";
+  folderBrowserSelected = folderBrowserPath;
+  document.getElementById("folder-modal-overlay").style.display = "";
+  renderQuickPicks();
+  fetchAndRenderFolder(folderBrowserPath || "");
+}
+
+function closeFolderBrowser() {
+  document.getElementById("folder-modal-overlay").style.display = "none";
 }
 
 function escHtml(s) {
@@ -279,6 +292,195 @@ function escHtml(s) {
 function md(text) {
   return DOMPurify.sanitize(marked.parse(String(text)));
 }
+
+// ── Folder browser (continued — needs escHtml) ───────────────────────────
+
+const FOLDER_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+
+async function fetchAndRenderFolder(dirPath) {
+  const listEl = document.getElementById("folder-list");
+  listEl.innerHTML = '<div class="folder-empty">Loading…</div>';
+  const url = dirPath
+    ? "/browse-directory?path=" + encodeURIComponent(dirPath)
+    : "/browse-directory";
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res
+        .json()
+        .catch(() => ({ error: "Failed to read directory" }));
+      listEl.innerHTML =
+        '<div class="folder-empty">' + escHtml(err.error) + "</div>";
+      return;
+    }
+    const data = await res.json();
+    folderBrowserPath = data.path;
+    folderBrowserSelected = data.path;
+    renderBreadcrumb(data.path);
+    if (data.entries.length === 0) {
+      listEl.innerHTML = '<div class="folder-empty">No subdirectories</div>';
+      return;
+    }
+    listEl.innerHTML = data.entries
+      .map(
+        (e) =>
+          '<div class="folder-item" data-path="' +
+          escHtml(e.path) +
+          '">' +
+          '<span class="folder-item-icon">' +
+          FOLDER_SVG +
+          "</span>" +
+          '<span class="folder-item-name">' +
+          escHtml(e.name) +
+          "</span></div>",
+      )
+      .join("");
+  } catch {
+    listEl.innerHTML = '<div class="folder-empty">Network error</div>';
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const item = e.target.closest(".folder-item");
+  if (!item) return;
+  const path = item.dataset.path;
+  if (!path) return;
+  document
+    .querySelectorAll(".folder-item.selected")
+    .forEach((el) => el.classList.remove("selected"));
+  item.classList.add("selected");
+  folderBrowserSelected = path;
+});
+
+document.addEventListener("dblclick", (e) => {
+  const item = e.target.closest(".folder-item");
+  if (!item) return;
+  const path = item.dataset.path;
+  if (path) fetchAndRenderFolder(path);
+});
+
+function renderBreadcrumb(dirPath) {
+  const parts = dirPath.split("/").filter(Boolean);
+  const el = document.getElementById("folder-breadcrumb");
+  let html = '<span class="breadcrumb-seg" data-bc-path="/">/</span>';
+  parts.forEach((part, i) => {
+    const fullPath = "/" + parts.slice(0, i + 1).join("/");
+    const isLast = i === parts.length - 1;
+    html += '<span class="breadcrumb-sep">/</span>';
+    html +=
+      '<span class="breadcrumb-seg' +
+      (isLast ? " current" : "") +
+      '" data-bc-path="' +
+      escHtml(fullPath) +
+      '">' +
+      escHtml(part) +
+      "</span>";
+  });
+  el.innerHTML = html;
+}
+
+document.addEventListener("click", (e) => {
+  const seg = e.target.closest(".breadcrumb-seg:not(.current)");
+  if (!seg) return;
+  const path = seg.dataset.bcPath;
+  if (path) fetchAndRenderFolder(path);
+});
+
+function renderQuickPicks() {
+  const el = document.getElementById("folder-quick-picks");
+  if (!cwdHistory.length) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = cwdHistory
+    .slice(0, 8)
+    .map((dir) => {
+      const short = dir.replace(/^\/home\/[^/]+/, "~");
+      return (
+        '<div class="quick-pick-chip" data-qp-path="' +
+        escHtml(dir) +
+        '" title="' +
+        escHtml(dir) +
+        '">' +
+        escHtml(short) +
+        "</div>"
+      );
+    })
+    .join("");
+}
+
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest(".quick-pick-chip");
+  if (!chip) return;
+  const path = chip.dataset.qpPath;
+  if (path) {
+    setCwdValue(path);
+    closeFolderBrowser();
+  }
+});
+
+function confirmFolderSelection() {
+  setCwdValue(folderBrowserSelected);
+  closeFolderBrowser();
+}
+
+function createNewFolder() {
+  const listEl = document.getElementById("folder-list");
+  const existing = listEl.querySelector(".folder-new-input-row");
+  if (existing) {
+    existing.querySelector("input").focus();
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = "folder-new-input-row";
+  row.innerHTML =
+    '<input type="text" placeholder="Folder name…">' +
+    "<button>Create</button>";
+  const inp = row.querySelector("input");
+  const btn = row.querySelector("button");
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitNewFolder(inp);
+    if (e.key === "Escape") row.remove();
+  });
+  btn.addEventListener("click", () => submitNewFolder(inp));
+  listEl.insertBefore(row, listEl.firstChild);
+  inp.focus();
+}
+
+async function submitNewFolder(inputEl) {
+  const name = inputEl.value.trim();
+  if (!name) return;
+  try {
+    const res = await fetch("/create-directory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parent: folderBrowserPath, name }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed" }));
+      alert(err.error || "Failed to create directory");
+      return;
+    }
+    fetchAndRenderFolder(folderBrowserPath);
+  } catch {
+    alert("Network error");
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (
+    e.key === "Escape" &&
+    document.getElementById("folder-modal-overlay").style.display !== "none"
+  ) {
+    closeFolderBrowser();
+  }
+});
+document
+  .getElementById("folder-modal-overlay")
+  .addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeFolderBrowser();
+  });
 
 // ── Session list ───────────────────────────────────────────────────────────
 function renderList(list) {
@@ -1068,7 +1270,10 @@ function initSSE() {
       sessions[j.id] = j;
     });
     renderList(list); // already server-sorted
-    updateCwdSelect(list);
+    updateCwdHistory(list);
+    if (cwdHistory.length && !document.getElementById("cwd-value").value) {
+      setCwdValue(cwdHistory[0]);
+    }
     const hashId = location.hash.slice(1);
     if (hashId && sessions[hashId] && !selectedId) {
       // First load: restore from hash using snapshot data (no extra fetch)
@@ -1097,7 +1302,7 @@ function initSSE() {
     sessions[job.id] = job;
     const sorted = getSortedJobs();
     renderList(sorted);
-    updateCwdSelect(sorted);
+    updateCwdHistory(sorted);
     if (selectedId === job.id) {
       renderDetailFresh = true;
       renderDetail(job);
@@ -1320,11 +1525,7 @@ async function sendFollowUp(id) {
 async function submitJob() {
   const prompt = document.getElementById("prompt").value.trim();
   if (!prompt) return;
-  const cwdSel = document.getElementById("cwd-select");
-  const cwdVal =
-    cwdSel.value === "__new__"
-      ? document.getElementById("cwd-custom").value.trim()
-      : cwdSel.value;
+  const cwdVal = document.getElementById("cwd-value").value.trim();
   const useWorktree = document.getElementById("use-worktree").checked;
   const body = cwdVal
     ? {

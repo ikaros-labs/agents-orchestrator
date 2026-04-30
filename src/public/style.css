@@ -31,27 +31,286 @@ body {
   outline: none;
   border-color: #555;
 }
-.new-task-form select {
+/* ── CWD picker trigger ────────────────────────────────────────────────── */
+.cwd-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: #1e1e1e;
   border: 1px solid #333;
-  color: #e0e0e0;
   border-radius: 6px;
-  padding: 8px 28px 8px 10px;
+  padding: 8px 10px;
+  cursor: pointer;
   font-size: 12px;
   font-family: monospace;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
+  color: #888;
+  transition: border-color 0.15s;
 }
-.new-task-form select:focus {
-  outline: none;
+.cwd-picker:hover {
   border-color: #555;
 }
-.new-task-form select option[value="__new__"] {
+.cwd-picker-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: #555;
+}
+.cwd-picker-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cwd-picker-text.has-value {
+  color: #e0e0e0;
+}
+.cwd-picker-clear {
+  flex-shrink: 0;
+  color: #555;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.cwd-picker-clear:hover {
+  color: #ef4444;
+}
+
+/* ── Folder browser modal ──────────────────────────────────────────────── */
+.folder-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.folder-modal {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 10px;
+  width: 520px;
+  max-width: 95vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.folder-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+}
+.folder-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+.folder-modal-close {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.folder-modal-close:hover {
+  color: #e0e0e0;
+}
+.folder-modal-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-family: monospace;
+  color: #888;
+  border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.breadcrumb-seg {
+  cursor: pointer;
   color: #6b9eff;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.breadcrumb-seg:hover {
+  background: #2a2a2a;
+}
+.breadcrumb-sep {
+  color: #444;
+  user-select: none;
+}
+.breadcrumb-seg.current {
+  color: #e0e0e0;
+  cursor: default;
+}
+.breadcrumb-seg.current:hover {
+  background: transparent;
+}
+.folder-modal-quick-picks {
+  padding: 8px 16px;
+  border-bottom: 1px solid #2a2a2a;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.folder-modal-quick-picks:empty {
+  display: none;
+  padding: 0;
+  border: none;
+}
+.quick-pick-chip {
+  background: #0d1f35;
+  border: 1px solid #1e4a7a;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #6b9eff;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.quick-pick-chip:hover {
+  background: #1a2a4a;
+  border-color: #2563eb;
+}
+.folder-modal-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 200px;
+  max-height: 360px;
+}
+.folder-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: monospace;
+  color: #e0e0e0;
+  border-bottom: 1px solid #1a1a1a;
+}
+.folder-item:hover {
+  background: #2a2a2a;
+}
+.folder-item.selected {
+  background: #1a2a4a;
+}
+.folder-item-icon {
+  color: #6b9eff;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.folder-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-empty {
+  padding: 24px 16px;
+  color: #555;
+  font-size: 13px;
+  text-align: center;
+}
+.folder-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid #2a2a2a;
+  flex-shrink: 0;
+}
+.folder-modal-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid #333;
+  color: #888;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.folder-modal-new-btn:hover {
+  border-color: #555;
+  color: #ccc;
+}
+.folder-modal-actions {
+  display: flex;
+  gap: 8px;
+}
+.folder-modal-cancel {
+  background: transparent;
+  border: 1px solid #333;
+  color: #888;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.folder-modal-cancel:hover {
+  border-color: #555;
+  color: #ccc;
+}
+.folder-modal-ok {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.folder-modal-ok:hover {
+  background: #1d4ed8;
+}
+.folder-new-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid #1a1a1a;
+}
+.folder-new-input-row input {
+  flex: 1;
+  background: #0f0f0f;
+  border: 1px solid #2563eb;
+  color: #e0e0e0;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: monospace;
+  outline: none;
+}
+.folder-new-input-row button {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
 }
 .worktree-label {
   display: flex;
@@ -1367,6 +1626,13 @@ details.chat-tool-bash[open] > summary {
 
 /* ── Mobile layout (≤ 768px) ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
+  .folder-modal {
+    width: 100%;
+    max-width: 100vw;
+    max-height: 85vh;
+    border-radius: 10px 10px 0 0;
+    margin-top: auto;
+  }
   /* Single-panel slide navigation */
   .main {
     position: relative;
