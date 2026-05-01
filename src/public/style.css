@@ -635,10 +635,13 @@ body {
   font-size: 10px;
 }
 /* Subagent nesting */
-[data-parent-tool-use-id] {
+.agent-children {
   margin-left: 20px;
   border-left: 2px solid rgba(129, 140, 248, 0.2);
   padding-left: 12px;
+}
+.agent-children-collapsed {
+  display: none;
 }
 .chat-tool-agent {
   color: #a78bfa;

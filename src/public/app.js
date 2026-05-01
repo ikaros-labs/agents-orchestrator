@@ -589,14 +589,6 @@ function renderBashTool(e) {
   </details>`;
 }
 
-function wrapWithNesting(html, entry) {
-  if (!html || !entry.parentToolUseId) return html;
-  return html.replace(
-    /^(<\w+)/,
-    `$1 data-parent-tool-use-id="${escHtml(entry.parentToolUseId)}"`,
-  );
-}
-
 function renderChatEntry(e, cwd) {
   if (e.type === "user") {
     return `<div class="chat-user">${escHtml(e.text)}</div>`;
@@ -1052,9 +1044,8 @@ function applyAgentCollapseState(feed) {
   for (const id of collapsedAgents) {
     const agentEl = feed.querySelector(`.chat-tool-agent[data-tool-use-id="${CSS.escape(id)}"]`);
     if (agentEl) agentEl.classList.add("collapsed");
-    feed.querySelectorAll(`[data-parent-tool-use-id="${CSS.escape(id)}"]`).forEach((el) => {
-      el.style.display = "none";
-    });
+    const container = feed.querySelector(`.agent-children[data-agent-id="${CSS.escape(id)}"]`);
+    if (container) container.classList.add("agent-children-collapsed");
   }
 }
 
@@ -1063,19 +1054,73 @@ function toggleAgentCollapse(agentEl) {
   if (!id) return;
   const feed = agentEl.closest("#chat-feed");
   if (!feed) return;
+  const container = feed.querySelector(`.agent-children[data-agent-id="${CSS.escape(id)}"]`);
+  if (!container) return;
   if (collapsedAgents.has(id)) {
     collapsedAgents.delete(id);
     agentEl.classList.remove("collapsed");
-    feed.querySelectorAll(`[data-parent-tool-use-id="${CSS.escape(id)}"]`).forEach((el) => {
-      el.style.display = "";
-    });
+    container.classList.remove("agent-children-collapsed");
   } else {
     collapsedAgents.add(id);
     agentEl.classList.add("collapsed");
-    feed.querySelectorAll(`[data-parent-tool-use-id="${CSS.escape(id)}"]`).forEach((el) => {
-      el.style.display = "none";
-    });
+    container.classList.add("agent-children-collapsed");
   }
+}
+
+function buildGroupedChatHtml(chat, cwd) {
+  const agentIds = new Set();
+  for (const e of chat) {
+    if (e.type === "tool_call" && e.name === "Agent" && e.toolUseId) {
+      agentIds.add(e.toolUseId);
+    }
+  }
+  if (agentIds.size === 0) {
+    return chat
+      .map((e) => {
+        let html = renderChatEntry(e, cwd);
+        if (e.type === "tool_call" && e.name === "ExitPlanMode")
+          return (html || "") + renderPlanCard(e.input?.plan);
+        return html || "";
+      })
+      .join("");
+  }
+  const childBuckets = new Map();
+  for (const id of agentIds) childBuckets.set(id, []);
+
+  const topItems = [];
+  for (const e of chat) {
+    let html = renderChatEntry(e, cwd);
+    if (!html) continue;
+    if (e.type === "tool_call" && e.name === "ExitPlanMode")
+      html += renderPlanCard(e.input?.plan);
+
+    const bucket =
+      e.parentToolUseId && childBuckets.has(e.parentToolUseId)
+        ? childBuckets.get(e.parentToolUseId)
+        : topItems;
+
+    bucket.push(html);
+    if (
+      e.type === "tool_call" &&
+      e.name === "Agent" &&
+      e.toolUseId &&
+      childBuckets.has(e.toolUseId)
+    ) {
+      bucket.push({ agentId: e.toolUseId });
+    }
+  }
+
+  function resolveItems(items) {
+    return items
+      .map((item) => {
+        if (typeof item === "string") return item;
+        const children = childBuckets.get(item.agentId) || [];
+        const collapsed = collapsedAgents.has(item.agentId);
+        return `<div class="agent-children${collapsed ? " agent-children-collapsed" : ""}" data-agent-id="${escHtml(item.agentId)}">${resolveItems(children)}</div>`;
+      })
+      .join("");
+  }
+  return resolveItems(topItems);
 }
 
 function renderDetail(job) {
@@ -1090,15 +1135,7 @@ function renderDetail(job) {
   const inputState = captureInputState(job.id);
 
   const cwd = job.worktreePath ?? job.cwd;
-  const chatHtml = job.chat
-    .map((e) => {
-      let html = renderChatEntry(e, cwd);
-      html = wrapWithNesting(html, e);
-      if (e.type === "tool_call" && e.name === "ExitPlanMode")
-        return html + renderPlanCard(e.input?.plan);
-      return html;
-    })
-    .join("");
+  const chatHtml = buildGroupedChatHtml(job.chat, cwd);
 
   const feedHtml =
     `<div class="chat-user">${escHtml(job.prompt)}</div>${renderInputImages(job)}` +
@@ -1263,11 +1300,12 @@ function appendChatEntryDOM(entry, jobId, index) {
     sessions[jobId]?.worktreePath ?? sessions[jobId]?.cwd,
   );
   if (!html) return;
-  html = wrapWithNesting(html, entry);
   // Inject data-chat-index into the root element so we can find it for updates
   if (index !== undefined) {
     html = html.replace(/^(<\w+)/, `$1 data-chat-index="${index}"`);
   }
+  const isAgent =
+    entry.type === "tool_call" && entry.name === "Agent" && entry.toolUseId;
   // If element with this index already exists, update it in-place
   if (index !== undefined) {
     const existing = feed.querySelector(`[data-chat-index="${index}"]`);
@@ -1296,14 +1334,21 @@ function appendChatEntryDOM(entry, jobId, index) {
   ) {
     feed.innerHTML = "";
   }
+  // If this is an Agent entry, append an empty children container after the header
+  if (isAgent) {
+    html += `<div class="agent-children" data-agent-id="${escHtml(entry.toolUseId)}"></div>`;
+  }
+  // Determine target: insert into parent agent's container if applicable
+  let target = feed;
+  if (entry.parentToolUseId) {
+    const container = feed.querySelector(
+      `.agent-children[data-agent-id="${CSS.escape(entry.parentToolUseId)}"]`,
+    );
+    if (container) target = container;
+  }
   const wasAtBottom =
     feed.scrollHeight - feed.clientHeight - feed.scrollTop <= 80;
-  feed.insertAdjacentHTML("beforeend", html);
-  const newEl = feed.lastElementChild;
-  if (newEl) {
-    const parentId = newEl.dataset.parentToolUseId;
-    if (parentId && collapsedAgents.has(parentId)) newEl.style.display = "none";
-  }
+  target.insertAdjacentHTML("beforeend", html);
   if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
 }
 
