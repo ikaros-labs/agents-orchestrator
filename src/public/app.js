@@ -1070,14 +1070,16 @@ function toggleAgentCollapse(agentEl) {
 function buildGroupedChatHtml(chat, cwd) {
   const agentIds = new Set();
   for (const e of chat) {
-    if (e.type === "tool_call" && e.name === "Agent" && e.toolUseId) {
+    if (e && e.type === "tool_call" && e.name === "Agent" && e.toolUseId) {
       agentIds.add(e.toolUseId);
     }
   }
   if (agentIds.size === 0) {
     return chat
-      .map((e) => {
+      .map((e, chatIdx) => {
+        if (!e) return "";
         let html = renderChatEntry(e, cwd);
+        if (html) html = html.replace(/^(<\w+)/, `$1 data-chat-index="${chatIdx}"`);
         if (e.type === "tool_call" && e.name === "ExitPlanMode")
           return (html || "") + renderPlanCard(e.input?.plan);
         return html || "";
@@ -1088,9 +1090,12 @@ function buildGroupedChatHtml(chat, cwd) {
   for (const id of agentIds) childBuckets.set(id, []);
 
   const topItems = [];
-  for (const e of chat) {
+  for (let chatIdx = 0; chatIdx < chat.length; chatIdx++) {
+    const e = chat[chatIdx];
+    if (!e) continue;
     let html = renderChatEntry(e, cwd);
     if (!html) continue;
+    html = html.replace(/^(<\w+)/, `$1 data-chat-index="${chatIdx}"`);
     if (e.type === "tool_call" && e.name === "ExitPlanMode")
       html += renderPlanCard(e.input?.plan);
 
@@ -1348,7 +1353,20 @@ function appendChatEntryDOM(entry, jobId, index) {
   }
   const wasAtBottom =
     feed.scrollHeight - feed.clientHeight - feed.scrollTop <= 80;
-  target.insertAdjacentHTML("beforeend", html);
+  // Insert at the correct position based on index order rather than always appending.
+  // This handles concurrent tool calls that arrive via SSE out of index order.
+  let inserted = false;
+  if (index !== undefined) {
+    const nextEl = Array.from(target.children).find((el) => {
+      const elIdx = el.getAttribute("data-chat-index");
+      return elIdx !== null && parseInt(elIdx, 10) > index;
+    });
+    if (nextEl) {
+      nextEl.insertAdjacentHTML("beforebegin", html);
+      inserted = true;
+    }
+  }
+  if (!inserted) target.insertAdjacentHTML("beforeend", html);
   if (wasAtBottom) feed.scrollTop = feed.scrollHeight;
 }
 
