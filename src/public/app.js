@@ -660,7 +660,7 @@ function renderQuestionBar(job) {
         <input type="${inputType}" name="${name}" value="${escHtml(opt.label)}" ${checked}>
         <span class="question-option-body">
           <span class="question-option-label">${escHtml(opt.label)}</span>
-          ${opt.description ? `<span class="question-option-desc">${escHtml(opt.description)}</span>` : ""}
+          ${opt.description ? `<span class="question-option-desc markdown-body">${md(opt.description)}</span>` : ""}
         </span>
       </label>`;
         })
