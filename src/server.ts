@@ -274,6 +274,27 @@ Bun.serve({
         }),
     },
 
+    // ── Serve arbitrary image file by absolute path ────────────────────────
+
+    "/file": async (req) => {
+      const url = new URL(req.url);
+      const filePath = url.searchParams.get("path");
+      if (!filePath) return jsonError(400, "Missing path parameter");
+      if (!filePath.startsWith("/") || filePath.includes("\0")) {
+        return jsonError(400, "Invalid path");
+      }
+      const resolved = normalize(filePath);
+      const ext = resolved.split(".").pop()?.toLowerCase() ?? "";
+      if (!EXT_CONTENT_TYPE[ext]?.startsWith("image/")) {
+        return jsonError(400, "Only image files can be served via this endpoint");
+      }
+      const file = Bun.file(resolved);
+      if (!(await file.exists())) return jsonError(404, "File not found");
+      return new Response(file, {
+        headers: { "Content-Type": EXT_CONTENT_TYPE[ext] },
+      });
+    },
+
     // ── Saved images / documents ───────────────────────────────────────────
 
     "/images/:sessionId/:filename": async (req) => {
