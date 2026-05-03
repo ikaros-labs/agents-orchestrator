@@ -1136,7 +1136,6 @@ function buildGroupedChatHtml(chat, cwd) {
       e.toolUseId &&
       childBuckets.has(e.toolUseId)
     ) {
-      bucket.push(renderAgentParams(e));
       bucket.push({ agentId: e.toolUseId, agentEntry: e });
     }
   }
@@ -1147,8 +1146,8 @@ function buildGroupedChatHtml(chat, cwd) {
         if (typeof item === "string") return item;
         const children = childBuckets.get(item.agentId) || [];
         const collapsed = collapsedAgents.has(item.agentId);
-        const childrenHtml = `<div class="agent-children${collapsed ? " agent-children-collapsed" : ""}" data-agent-id="${escHtml(item.agentId)}">${resolveItems(children)}</div>`;
-        return childrenHtml + renderAgentOutput(item.agentEntry);
+        const childrenHtml = `<div class="agent-children${collapsed ? " agent-children-collapsed" : ""}" data-agent-id="${escHtml(item.agentId)}">${renderAgentParams(item.agentEntry)}${resolveItems(children)}${renderAgentOutput(item.agentEntry)}</div>`;
+        return childrenHtml;
       })
       .join("");
   }
@@ -1358,7 +1357,7 @@ function appendChatEntryDOM(entry, jobId, index) {
             }
           } else {
             const childrenEl = feed.querySelector(`.agent-children[data-agent-id="${agentId}"]`);
-            if (childrenEl) childrenEl.insertAdjacentHTML("afterend", outputHtml);
+            if (childrenEl) childrenEl.insertAdjacentHTML("beforeend", outputHtml);
           }
         }
         return;
@@ -1387,10 +1386,9 @@ function appendChatEntryDOM(entry, jobId, index) {
   ) {
     feed.innerHTML = "";
   }
-  // If this is an Agent entry, append params details + empty children container after the header
+  // If this is an Agent entry, append a children container (with params pre-inserted) after the header
   if (isAgent) {
-    html += renderAgentParams(entry);
-    html += `<div class="agent-children" data-agent-id="${escHtml(entry.toolUseId)}"></div>`;
+    html += `<div class="agent-children" data-agent-id="${escHtml(entry.toolUseId)}">${renderAgentParams(entry)}</div>`;
   }
   // Determine target: insert into parent agent's container if applicable
   let target = feed;
