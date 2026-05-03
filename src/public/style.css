@@ -299,8 +299,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 32px 24px;
+  justify-content: flex-start;
+  padding: max(32px, calc(50vh - 230px)) 24px 32px;
   overflow-y: auto;
   gap: 28px;
 }
@@ -333,7 +333,9 @@ body {
   font-size: 14px;
   resize: none;
   font-family: inherit;
-  min-height: 100px;
+  min-height: 88px;
+  max-height: 320px;
+  overflow-y: auto;
 }
 .new-task-form textarea:focus {
   outline: none;
