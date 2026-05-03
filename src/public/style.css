@@ -742,40 +742,6 @@ details.chat-tool-bash[open] > summary {
   color: #4b5563;
   font-style: italic;
 }
-.agent-params {
-  display: inline-block;
-  margin-left: 8px;
-  vertical-align: middle;
-}
-.agent-params-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: #12122a;
-  border: 1px solid #2a2a4a;
-  border-radius: 3px;
-  padding: 1px 7px;
-  font-size: 10px;
-  font-family: monospace;
-  color: #7c7cba;
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-  font-weight: 400;
-}
-.agent-params-summary::-webkit-details-marker { display: none; }
-.agent-params-summary::after { content: "▶"; font-size: 7px; opacity: 0.5; }
-.agent-params[open] > .agent-params-summary::after { content: "▼"; }
-.agent-params[open] > .agent-params-summary {
-  border-bottom-color: transparent;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-.agent-params .tool-expand-body {
-  display: block;
-  border-radius: 0 3px 3px 3px;
-  max-width: 680px;
-}
 .chat-todo {
   display: flex;
   flex-direction: column;

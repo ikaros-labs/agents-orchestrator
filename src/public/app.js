@@ -597,35 +597,31 @@ function renderAgentTool(e) {
   const toolUseAttr = e.toolUseId
     ? ` data-tool-use-id="${escHtml(e.toolUseId)}"`
     : "";
+  return `<div class="chat-tool chat-tool-agent"${toolUseAttr}>Agent —${desc}</div>`;
+}
 
-  let paramsHtml = "";
-  if (inp.subagent_type) {
-    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">type</span><pre class="tool-expand-code">${escHtml(String(inp.subagent_type))}</pre></div>`;
-  }
-  if (inp.model) {
-    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">model</span><pre class="tool-expand-code">${escHtml(String(inp.model))}</pre></div>`;
-  }
-  if (inp.isolation) {
-    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">isolation</span><pre class="tool-expand-code">${escHtml(String(inp.isolation))}</pre></div>`;
-  }
-  if (inp.run_in_background) {
-    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">bg</span><pre class="tool-expand-code">true</pre></div>`;
-  }
-  if (inp.prompt) {
-    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">prompt</span><pre class="tool-expand-code">${escHtml(String(inp.prompt))}</pre></div>`;
-  }
-  if (e.output !== undefined && e.output !== null) {
-    const outputIsEmpty = !e.output;
-    const outClass = outputIsEmpty ? " tool-expand-empty" : "";
-    const outText = outputIsEmpty ? "(no output)" : escHtml(String(e.output));
-    paramsHtml += `<div class="tool-expand-row${outClass}"><span class="tool-expand-key">out</span><pre class="tool-expand-code">${outText}</pre></div>`;
-  }
+function renderAgentParams(e) {
+  const inp = e.input ?? {};
+  const agentAttr = e.toolUseId ? ` data-agent-id="${escHtml(e.toolUseId)}"` : "";
+  const preview = escHtml((inp.subagent_type ? inp.subagent_type + " — " : "") + String(inp.prompt ?? inp.description ?? "").slice(0, 80));
+  let bodyHtml = "";
+  if (inp.subagent_type) bodyHtml += `<div class="tool-expand-row"><span class="tool-expand-key">type</span><pre class="tool-expand-code">${escHtml(String(inp.subagent_type))}</pre></div>`;
+  if (inp.model) bodyHtml += `<div class="tool-expand-row"><span class="tool-expand-key">model</span><pre class="tool-expand-code">${escHtml(String(inp.model))}</pre></div>`;
+  if (inp.isolation) bodyHtml += `<div class="tool-expand-row"><span class="tool-expand-key">isolation</span><pre class="tool-expand-code">${escHtml(String(inp.isolation))}</pre></div>`;
+  if (inp.run_in_background) bodyHtml += `<div class="tool-expand-row"><span class="tool-expand-key">bg</span><pre class="tool-expand-code">true</pre></div>`;
+  if (inp.prompt) bodyHtml += `<div class="tool-expand-row"><span class="tool-expand-key">prompt</span><pre class="tool-expand-code">${escHtml(String(inp.prompt))}</pre></div>`;
+  if (!bodyHtml) return "";
+  return `<details class="chat-tool-bash"${agentAttr}><summary class="chat-tool">params <span class="tool-detail">${preview}</span></summary><div class="tool-expand-body">${bodyHtml}</div></details>`;
+}
 
-  const detailsHtml = paramsHtml
-    ? `<details class="agent-params" onclick="event.stopPropagation()"><summary class="agent-params-summary">params</summary><div class="tool-expand-body">${paramsHtml}</div></details>`
-    : "";
-
-  return `<div class="chat-tool chat-tool-agent"${toolUseAttr}>Agent —${desc}${detailsHtml}</div>`;
+function renderAgentOutput(e) {
+  if (e.output === undefined || e.output === null) return "";
+  const agentAttr = e.toolUseId ? ` data-agent-output-id="${escHtml(e.toolUseId)}"` : "";
+  const outputIsEmpty = !e.output;
+  const preview = outputIsEmpty ? "(no output)" : escHtml(String(e.output).slice(0, 80));
+  const outClass = outputIsEmpty ? " tool-expand-empty" : "";
+  const outText = outputIsEmpty ? "(no output)" : escHtml(String(e.output));
+  return `<details class="chat-tool-bash"${agentAttr}><summary class="chat-tool">output <span class="tool-detail">${preview}</span></summary><div class="tool-expand-body"><div class="tool-expand-row${outClass}"><span class="tool-expand-key">out</span><pre class="tool-expand-code">${outText}</pre></div></div></details>`;
 }
 
 function renderChatEntry(e, cwd) {
@@ -1140,7 +1136,8 @@ function buildGroupedChatHtml(chat, cwd) {
       e.toolUseId &&
       childBuckets.has(e.toolUseId)
     ) {
-      bucket.push({ agentId: e.toolUseId });
+      bucket.push(renderAgentParams(e));
+      bucket.push({ agentId: e.toolUseId, agentEntry: e });
     }
   }
 
@@ -1150,7 +1147,8 @@ function buildGroupedChatHtml(chat, cwd) {
         if (typeof item === "string") return item;
         const children = childBuckets.get(item.agentId) || [];
         const collapsed = collapsedAgents.has(item.agentId);
-        return `<div class="agent-children${collapsed ? " agent-children-collapsed" : ""}" data-agent-id="${escHtml(item.agentId)}">${resolveItems(children)}</div>`;
+        const childrenHtml = `<div class="agent-children${collapsed ? " agent-children-collapsed" : ""}" data-agent-id="${escHtml(item.agentId)}">${resolveItems(children)}</div>`;
+        return childrenHtml + renderAgentOutput(item.agentEntry);
       })
       .join("");
   }
@@ -1344,6 +1342,27 @@ function appendChatEntryDOM(entry, jobId, index) {
   if (index !== undefined) {
     const existing = feed.querySelector(`[data-chat-index="${index}"]`);
     if (existing) {
+      if (isAgent) {
+        // For Agent patches (output arriving): insert/update the output element after agent-children;
+        // the header and params don't need to change.
+        const outputHtml = renderAgentOutput(entry);
+        if (outputHtml) {
+          const agentId = CSS.escape(entry.toolUseId);
+          const existingOut = feed.querySelector(`[data-agent-output-id="${agentId}"]`);
+          if (existingOut) {
+            const wasOpen = existingOut.open;
+            existingOut.outerHTML = outputHtml;
+            if (wasOpen) {
+              const updated = feed.querySelector(`[data-agent-output-id="${agentId}"]`);
+              if (updated) updated.open = true;
+            }
+          } else {
+            const childrenEl = feed.querySelector(`.agent-children[data-agent-id="${agentId}"]`);
+            if (childrenEl) childrenEl.insertAdjacentHTML("afterend", outputHtml);
+          }
+        }
+        return;
+      }
       const wasOpen =
         existing.tagName === "DETAILS"
           ? existing.open
@@ -1368,8 +1387,9 @@ function appendChatEntryDOM(entry, jobId, index) {
   ) {
     feed.innerHTML = "";
   }
-  // If this is an Agent entry, append an empty children container after the header
+  // If this is an Agent entry, append params details + empty children container after the header
   if (isAgent) {
+    html += renderAgentParams(entry);
     html += `<div class="agent-children" data-agent-id="${escHtml(entry.toolUseId)}"></div>`;
   }
   // Determine target: insert into parent agent's container if applicable
@@ -1730,7 +1750,6 @@ document.getElementById("prompt").addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
-  if (e.target.closest(".agent-params")) return;
   const agentEl = e.target.closest(".chat-tool-agent");
   if (agentEl && agentEl.dataset.toolUseId) toggleAgentCollapse(agentEl);
 });
