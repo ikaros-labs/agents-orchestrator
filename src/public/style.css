@@ -639,6 +639,9 @@ body {
   margin-left: 20px;
   border-left: 2px solid rgba(129, 140, 248, 0.2);
   padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .agent-children-collapsed {
   display: none;
