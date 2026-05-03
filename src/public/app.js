@@ -589,6 +589,45 @@ function renderBashTool(e) {
   </details>`;
 }
 
+function renderAgentTool(e) {
+  const inp = e.input ?? {};
+  const desc = inp.description
+    ? ` <span class="tool-detail">${escHtml(String(inp.description).slice(0, 120))}</span>`
+    : "";
+  const toolUseAttr = e.toolUseId
+    ? ` data-tool-use-id="${escHtml(e.toolUseId)}"`
+    : "";
+
+  let paramsHtml = "";
+  if (inp.subagent_type) {
+    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">type</span><pre class="tool-expand-code">${escHtml(String(inp.subagent_type))}</pre></div>`;
+  }
+  if (inp.model) {
+    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">model</span><pre class="tool-expand-code">${escHtml(String(inp.model))}</pre></div>`;
+  }
+  if (inp.isolation) {
+    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">isolation</span><pre class="tool-expand-code">${escHtml(String(inp.isolation))}</pre></div>`;
+  }
+  if (inp.run_in_background) {
+    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">bg</span><pre class="tool-expand-code">true</pre></div>`;
+  }
+  if (inp.prompt) {
+    paramsHtml += `<div class="tool-expand-row"><span class="tool-expand-key">prompt</span><pre class="tool-expand-code">${escHtml(String(inp.prompt))}</pre></div>`;
+  }
+  if (e.output !== undefined && e.output !== null) {
+    const outputIsEmpty = !e.output;
+    const outClass = outputIsEmpty ? " tool-expand-empty" : "";
+    const outText = outputIsEmpty ? "(no output)" : escHtml(String(e.output));
+    paramsHtml += `<div class="tool-expand-row${outClass}"><span class="tool-expand-key">out</span><pre class="tool-expand-code">${outText}</pre></div>`;
+  }
+
+  const detailsHtml = paramsHtml
+    ? `<details class="agent-params" onclick="event.stopPropagation()"><summary class="agent-params-summary">params</summary><div class="tool-expand-body">${paramsHtml}</div></details>`
+    : "";
+
+  return `<div class="chat-tool chat-tool-agent"${toolUseAttr}>Agent —${desc}${detailsHtml}</div>`;
+}
+
 function renderChatEntry(e, cwd) {
   if (e.type === "user") {
     return `<div class="chat-user">${escHtml(e.text)}</div>`;
@@ -600,12 +639,7 @@ function renderChatEntry(e, cwd) {
     if (e.name === "ExitPlanMode") return renderPlanCard(e.input?.plan);
     if (e.name === "TodoWrite") return renderTodoWrite(e.input?.todos);
     if (e.name === "Bash") return renderBashTool(e);
-    if (e.name === "Agent") {
-      const desc = e.input?.description
-        ? ` <span class="tool-detail">${escHtml(String(e.input.description).slice(0, 120))}</span>`
-        : "";
-      return `<div class="chat-tool chat-tool-agent"${e.toolUseId ? ` data-tool-use-id="${escHtml(e.toolUseId)}"` : ""}>Agent —${desc}</div>`;
-    }
+    if (e.name === "Agent") return renderAgentTool(e);
     return `<div class="chat-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
   if (e.type === "image") {
@@ -1696,6 +1730,7 @@ document.getElementById("prompt").addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("click", (e) => {
+  if (e.target.closest(".agent-params")) return;
   const agentEl = e.target.closest(".chat-tool-agent");
   if (agentEl && agentEl.dataset.toolUseId) toggleAgentCollapse(agentEl);
 });
