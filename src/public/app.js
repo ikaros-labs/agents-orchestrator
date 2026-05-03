@@ -1086,6 +1086,24 @@ function buildGroupedChatHtml(chat, cwd) {
       })
       .join("");
   }
+  // Fall back to flat path if no children have parentToolUseId (e.g. old sessions
+  // created before parentToolUseId was added to the stream — PR #88, 2026-04-30).
+  const hasGroupedChildren = chat.some(
+    (e) => e && e.parentToolUseId && agentIds.has(e.parentToolUseId),
+  );
+  if (!hasGroupedChildren) {
+    return chat
+      .map((e, chatIdx) => {
+        if (!e) return "";
+        let html = renderChatEntry(e, cwd);
+        if (html) html = html.replace(/^(<\w+)/, `$1 data-chat-index="${chatIdx}"`);
+        if (e.type === "tool_call" && e.name === "ExitPlanMode")
+          return (html || "") + renderPlanCard(e.input?.plan);
+        return html || "";
+      })
+      .join("");
+  }
+
   const childBuckets = new Map();
   for (const id of agentIds) childBuckets.set(id, []);
 
@@ -1094,10 +1112,13 @@ function buildGroupedChatHtml(chat, cwd) {
     const e = chat[chatIdx];
     if (!e) continue;
     let html = renderChatEntry(e, cwd);
-    if (!html) continue;
-    html = html.replace(/^(<\w+)/, `$1 data-chat-index="${chatIdx}"`);
-    if (e.type === "tool_call" && e.name === "ExitPlanMode")
+    if (e.type === "tool_call" && e.name === "ExitPlanMode") {
+      html = `<div data-chat-index="${chatIdx}" style="display:none"></div>`;
       html += renderPlanCard(e.input?.plan);
+    } else {
+      if (!html) continue;
+      html = html.replace(/^(<\w+)/, `$1 data-chat-index="${chatIdx}"`);
+    }
 
     const bucket =
       e.parentToolUseId && childBuckets.has(e.parentToolUseId)
@@ -1349,7 +1370,9 @@ function appendChatEntryDOM(entry, jobId, index) {
     const container = feed.querySelector(
       `.agent-children[data-agent-id="${CSS.escape(entry.parentToolUseId)}"]`,
     );
-    if (container) target = container;
+    if (container) {
+      target = container;
+    }
   }
   const wasAtBottom =
     feed.scrollHeight - feed.clientHeight - feed.scrollTop <= 80;
