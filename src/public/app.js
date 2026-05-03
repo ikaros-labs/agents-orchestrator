@@ -597,7 +597,7 @@ function renderChatEntry(e, cwd) {
     return `<div class="chat-text markdown-body">${md(e.text)}</div>`;
   }
   if (e.type === "tool_call") {
-    if (e.name === "ExitPlanMode") return "";
+    if (e.name === "ExitPlanMode") return renderPlanCard(e.input?.plan);
     if (e.name === "TodoWrite") return renderTodoWrite(e.input?.todos);
     if (e.name === "Bash") return renderBashTool(e);
     if (e.name === "Agent") {
@@ -1080,8 +1080,6 @@ function buildGroupedChatHtml(chat, cwd) {
         if (!e) return "";
         let html = renderChatEntry(e, cwd);
         if (html) html = html.replace(/^(<\w+)/, `$1 data-chat-index="${chatIdx}"`);
-        if (e.type === "tool_call" && e.name === "ExitPlanMode")
-          return (html || "") + renderPlanCard(e.input?.plan);
         return html || "";
       })
       .join("");
@@ -1096,9 +1094,6 @@ function buildGroupedChatHtml(chat, cwd) {
     let html = renderChatEntry(e, cwd);
     if (!html) continue;
     html = html.replace(/^(<\w+)/, `$1 data-chat-index="${chatIdx}"`);
-    if (e.type === "tool_call" && e.name === "ExitPlanMode")
-      html += renderPlanCard(e.input?.plan);
-
     const bucket =
       e.parentToolUseId && childBuckets.has(e.parentToolUseId)
         ? childBuckets.get(e.parentToolUseId)
