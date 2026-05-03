@@ -3,6 +3,10 @@ let mobileView = "sidebar";
 function isMobile() {
   return window.matchMedia("(max-width: 768px)").matches;
 }
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+}
 function showMobilePanel(view) {
   mobileView = view;
   const isDetail = view === "detail";
@@ -23,7 +27,9 @@ function showNewTask() {
     .forEach((el) => el.classList.remove("selected"));
   document.getElementById("new-task-panel").classList.remove("hidden");
   document.getElementById("detail").classList.add("hidden");
-  document.getElementById("prompt").focus();
+  const promptEl = document.getElementById("prompt");
+  promptEl.focus();
+  autoResize(promptEl);
   if (isMobile()) showMobilePanel("detail");
 }
 
@@ -1746,7 +1752,9 @@ async function submitJob() {
       body: JSON.stringify(body),
     });
     const { id } = await res.json();
-    document.getElementById("prompt").value = "";
+    const promptEl = document.getElementById("prompt");
+    promptEl.value = "";
+    autoResize(promptEl);
     // clear file attachments
     pendingFiles.forEach((f) => URL.revokeObjectURL(f.objectUrl));
     pendingFiles = [];
@@ -1907,6 +1915,7 @@ document.addEventListener("input", (e) => {
   if (e.target.tagName !== "TEXTAREA") return;
   const ta = e.target;
   if (ta.id === "prompt" || ta.id.startsWith("followup-prompt-") || ta.id.startsWith("revise-prompt-")) {
+    if (ta.id === "prompt") autoResize(ta);
     const slashWord = getSlashPrefix(ta);
     if (slashWord !== null && slashCommands.length > 0) {
       if (acTextarea !== ta) showAutocomplete(ta);
