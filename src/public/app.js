@@ -589,6 +589,32 @@ function renderBashTool(e) {
   </details>`;
 }
 
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"]);
+
+function renderReadTool(e, cwd) {
+  const filePath = e.input?.file_path ? String(e.input.file_path) : "";
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  const isImage = IMAGE_EXTENSIONS.has(ext);
+  let detail = filePath;
+  if (detail && cwd && detail.startsWith(cwd)) detail = "." + detail.slice(cwd.length);
+
+  let bodyHtml = "";
+  if (isImage && filePath) {
+    const src = `/file?path=${encodeURIComponent(filePath)}`;
+    bodyHtml = `<div class="tool-expand-row"><img src="${escHtml(src)}" alt="${escHtml(filePath)}" class="tool-expand-image" loading="lazy"></div>`;
+  } else if (e.output !== undefined && e.output !== null) {
+    const empty = !e.output;
+    const outClass = empty ? " tool-expand-empty" : "";
+    const outText = empty ? "(empty)" : escHtml(e.output);
+    bodyHtml = `<div class="tool-expand-row${outClass}"><span class="tool-expand-key">out</span><pre class="tool-expand-code">${outText}</pre></div>`;
+  }
+
+  return `<details class="chat-tool-bash">
+    <summary class="chat-tool">Read <span class="tool-detail">${escHtml(detail)}</span></summary>
+    <div class="tool-expand-body">${bodyHtml}</div>
+  </details>`;
+}
+
 function renderAgentTool(e) {
   const inp = e.input ?? {};
   const desc = inp.description
@@ -635,6 +661,7 @@ function renderChatEntry(e, cwd) {
     if (e.name === "ExitPlanMode") return renderPlanCard(e.input?.plan);
     if (e.name === "TodoWrite") return renderTodoWrite(e.input?.todos);
     if (e.name === "Bash") return renderBashTool(e);
+    if (e.name === "Read") return renderReadTool(e, cwd);
     if (e.name === "Agent") return renderAgentTool(e);
     return `<div class="chat-tool">${escHtml(e.name)}${toolDetail(e.name, e.input, cwd)}</div>`;
   }
