@@ -980,6 +980,39 @@ function renderFollowUpBar(job) {
   </div>`;
 }
 
+function fmtTokens(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(0) + "K";
+  return n.toLocaleString();
+}
+
+function renderUsageBadge(u) {
+  const parts = [`$${u.costUSD.toFixed(2)}`];
+
+  if (u.mainContextTokens && u.mainContextWindow) {
+    const pct = ((u.mainContextTokens / u.mainContextWindow) * 100).toFixed(1);
+    parts.push(`${fmtTokens(u.mainContextTokens)}/${fmtTokens(u.mainContextWindow)} context (${pct}%)`);
+  }
+
+  const totalIn = u.totalInputTokens ?? u.totalTokens ?? 0;
+  const totalOut = u.totalOutputTokens ?? 0;
+  if (totalIn) {
+    let tokStr = `${fmtTokens(totalIn)} in`;
+    if (totalOut) tokStr += ` / ${fmtTokens(totalOut)} out`;
+    parts.push(tokStr);
+  }
+  if (u.numTurns) parts.push(`${u.numTurns} turns`);
+
+  const models = u.modelUsage ? Object.entries(u.modelUsage) : [];
+  const tooltipLines = models.map(([name, m]) => {
+    const short = name.replace(/^claude-/, "").replace(/-\d{8}$/, "");
+    return `${short}: $${m.costUSD.toFixed(2)} · ${fmtTokens(m.inputTokens + m.cacheReadInputTokens + m.cacheCreationInputTokens)} in / ${fmtTokens(m.outputTokens)} out`;
+  });
+  const tooltip = tooltipLines.length ? escHtml(tooltipLines.join("\n")) : "Token and cost usage for this job";
+
+  return `<span title="${tooltip}">${parts.join(" · ")}</span>`;
+}
+
 function renderDetailHeader(job) {
   const started = job.startedAt
     ? new Date(job.startedAt).toLocaleTimeString()
@@ -1008,7 +1041,7 @@ function renderDetailHeader(job) {
       ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ""}
       ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ""}
       ${job.sandbox && job.sandbox !== "none" ? `<span class="mode-tag mode-tag-${job.sandbox}" title="Sandbox: ${job.sandbox}">${job.sandbox}</span>` : ""}
-      ${job.usage ? `<span title="Token and cost usage for this job">$${job.usage.costUSD.toFixed(1)} · ${job.usage.totalTokens.toLocaleString()} tokens (${((job.usage.totalTokens / 200000) * 100).toFixed(1)}%)</span>` : ""}
+      ${job.usage ? renderUsageBadge(job.usage) : ""}
       <div class="detail-actions">${stopBtnHtml}${archiveBtnHtml}</div>
     </div>
   </div>`;

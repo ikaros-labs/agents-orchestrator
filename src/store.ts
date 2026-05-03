@@ -100,7 +100,20 @@ export function loadStore(): void {
       // Migrate sessions created before archive support
       if (session.archived === undefined) session.archived = false;
       // Migrate sessions created before usage tracking
-      if (session.usage === undefined) session.usage = null;
+      if (session.usage === undefined) {
+        session.usage = null;
+      } else if (session.usage && (session.usage as any).totalTokens !== undefined) {
+        const old = session.usage as any;
+        session.usage = {
+          totalInputTokens: old.totalTokens ?? 0,
+          totalOutputTokens: 0,
+          costUSD: old.costUSD ?? 0,
+          numTurns: 0,
+          mainContextTokens: 0,
+          mainContextWindow: 200_000,
+          modelUsage: {},
+        };
+      }
       // Migrate sessions created before model/effort selection
       if (session.model === undefined) session.model = null;
       if (session.effort === undefined) session.effort = null;
@@ -342,10 +355,29 @@ export function addUsage(id: string, delta: SessionUsage): void {
   const session = getSessionOrWarn(id, "addUsage");
   if (!session) return;
   if (session.usage === null) {
-    session.usage = { totalTokens: delta.totalTokens, costUSD: delta.costUSD };
+    session.usage = { ...delta };
   } else {
-    session.usage.totalTokens += delta.totalTokens;
-    session.usage.costUSD += delta.costUSD;
+    const u = session.usage;
+    u.totalInputTokens += delta.totalInputTokens;
+    u.totalOutputTokens += delta.totalOutputTokens;
+    u.costUSD += delta.costUSD;
+    u.numTurns += delta.numTurns;
+    u.mainContextTokens = delta.mainContextTokens;
+    u.mainContextWindow = delta.mainContextWindow;
+    for (const [model, mu] of Object.entries(delta.modelUsage)) {
+      const existing = u.modelUsage[model];
+      if (existing) {
+        existing.inputTokens += mu.inputTokens;
+        existing.outputTokens += mu.outputTokens;
+        existing.cacheReadInputTokens += mu.cacheReadInputTokens;
+        existing.cacheCreationInputTokens += mu.cacheCreationInputTokens;
+        existing.costUSD += mu.costUSD;
+        existing.contextWindow = mu.contextWindow;
+        existing.maxOutputTokens = mu.maxOutputTokens;
+      } else {
+        u.modelUsage[model] = { ...mu };
+      }
+    }
   }
   persistSession(session);
   emitSessionStatus(session);

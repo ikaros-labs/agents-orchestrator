@@ -32,9 +32,24 @@ export interface InputFile {
   filename: string;
 }
 
-export interface SessionUsage {
-  totalTokens: number;
+export interface ModelUsageEntry {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
   costUSD: number;
+  contextWindow: number;
+  maxOutputTokens: number;
+}
+
+export interface SessionUsage {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  costUSD: number;
+  numTurns: number;
+  mainContextTokens: number;
+  mainContextWindow: number;
+  modelUsage: Record<string, ModelUsageEntry>;
 }
 
 export interface Session {

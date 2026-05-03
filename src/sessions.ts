@@ -459,12 +459,41 @@ async function runQueryStream(
       if (opts.captureResult) store.setResult(id, message.subtype);
       const u = message.usage;
       if (u) {
+        const iterations: any[] = u.iterations ?? [];
+        const lastIter = iterations[iterations.length - 1];
+        const mainContextTokens = lastIter
+          ? (lastIter.input_tokens ?? 0) +
+            (lastIter.cache_read_input_tokens ?? 0) +
+            (lastIter.cache_creation_input_tokens ?? 0)
+          : 0;
+
+        const rawModelUsage = message.modelUsage ?? {};
+        const modelUsage: Record<string, any> = {};
+        let mainContextWindow = 200_000;
+        for (const [model, mu] of Object.entries(rawModelUsage) as [string, any][]) {
+          modelUsage[model] = {
+            inputTokens: mu.inputTokens ?? 0,
+            outputTokens: mu.outputTokens ?? 0,
+            cacheReadInputTokens: mu.cacheReadInputTokens ?? 0,
+            cacheCreationInputTokens: mu.cacheCreationInputTokens ?? 0,
+            costUSD: mu.costUSD ?? 0,
+            contextWindow: mu.contextWindow ?? 200_000,
+            maxOutputTokens: mu.maxOutputTokens ?? 16_384,
+          };
+          if (mu.contextWindow) mainContextWindow = mu.contextWindow;
+        }
+
         store.addUsage(id, {
-          totalTokens:
+          totalInputTokens:
             (u.input_tokens ?? 0) +
             (u.cache_read_input_tokens ?? 0) +
             (u.cache_creation_input_tokens ?? 0),
+          totalOutputTokens: u.output_tokens ?? 0,
           costUSD: message.total_cost_usd ?? 0,
+          numTurns: message.num_turns ?? 0,
+          mainContextTokens,
+          mainContextWindow,
+          modelUsage,
         });
       }
     }
