@@ -1,12 +1,19 @@
 import { z } from "zod";
 import { ALLOWED_MEDIA_TYPES } from "./sessions.ts";
+import type { SandboxMode } from "./types.ts";
+
+const SANDBOX_MODES = ["none", "sandbox", "docker", "yolo"] as const;
 
 export const DEFAULTS = {
   model: "claude-sonnet-4-6",
   effort: "high" as const,
   mode: "auto" as const,
-  sandbox: "sandbox" as const,
-} as const;
+  sandbox: ((): SandboxMode => {
+    const v = process.env.AGENT_SANDBOX;
+    if (SANDBOX_MODES.includes(v as SandboxMode)) return v as SandboxMode;
+    return "sandbox";
+  })(),
+};
 
 export const RawImageSchema = z.object({
   mediaType: z.string().refine((mt) => ALLOWED_MEDIA_TYPES.has(mt), {
