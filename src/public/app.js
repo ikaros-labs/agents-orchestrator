@@ -246,7 +246,16 @@ function setSandbox(sandbox) {
 
 function onCwdSelectChange() {
   const sel = document.getElementById("cwd-select");
-  if (sel.value === "__new__") openFolderBrowser();
+  if (sel.value === "__new__") {
+    openFolderBrowser();
+    return;
+  }
+  if (!sel.value) {
+    document.getElementById("git-sync-btn").style.display = "none";
+    document.getElementById("git-sync-error").textContent = "";
+    return;
+  }
+  checkGitStatus(sel.value);
 }
 
 function updateCwdSelect(list) {
@@ -413,6 +422,90 @@ function fbSelectFolder() {
   sel.value = fbCurrentPath;
   fbPrevSelectValue = fbCurrentPath;
   document.getElementById("folder-browser-overlay").style.display = "none";
+  checkGitStatus(fbCurrentPath);
+}
+
+// ── Git sync ──────────────────────────────────────────────────────────────────
+
+let gitSyncAbort = null;
+
+async function checkGitStatus(path) {
+  const syncBtn = document.getElementById("git-sync-btn");
+  const syncLabel = document.getElementById("git-sync-label");
+  const errorEl = document.getElementById("git-sync-error");
+
+  syncBtn.style.display = "none";
+  errorEl.textContent = "";
+
+  if (gitSyncAbort) gitSyncAbort.abort();
+  gitSyncAbort = new AbortController();
+
+  try {
+    const res = await fetch(`/git-status?path=${encodeURIComponent(path)}`, {
+      signal: gitSyncAbort.signal,
+    });
+    const data = await res.json();
+    if (!data.isGitRepo) return;
+
+    syncBtn.style.display = "";
+    syncBtn.disabled = false;
+    syncBtn.title = data.branch ? `Sync ${data.branch} — pull & push` : "Pull & push";
+
+    const parts = [];
+    if (data.behind > 0) parts.push(`↓${data.behind}`);
+    if (data.ahead > 0) parts.push(`↑${data.ahead}`);
+    syncLabel.textContent = parts.length ? parts.join(" ") : "Sync";
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    syncBtn.style.display = "none";
+  }
+}
+
+async function gitSync() {
+  const sel = document.getElementById("cwd-select");
+  const path = sel.value;
+  if (!path || path === "__new__") return;
+
+  const syncBtn = document.getElementById("git-sync-btn");
+  const syncLabel = document.getElementById("git-sync-label");
+  const errorEl = document.getElementById("git-sync-error");
+
+  syncBtn.disabled = true;
+  const prevLabel = syncLabel.textContent;
+  syncLabel.innerHTML = '<span class="spinner"></span>Syncing…';
+  errorEl.textContent = "";
+
+  try {
+    const res = await fetch("/git-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      errorEl.textContent = data.error || "Sync failed";
+      syncLabel.textContent = prevLabel;
+      syncBtn.disabled = false;
+      return;
+    }
+
+    const parts = [];
+    if (data.behind > 0) parts.push(`↓${data.behind}`);
+    if (data.ahead > 0) parts.push(`↑${data.ahead}`);
+    syncLabel.textContent = parts.length ? parts.join(" ") : "Synced";
+    syncBtn.disabled = false;
+
+    if (!parts.length) {
+      setTimeout(() => {
+        if (syncLabel.textContent === "Synced") syncLabel.textContent = "Sync";
+      }, 2000);
+    }
+  } catch {
+    errorEl.textContent = "Network error";
+    syncLabel.textContent = prevLabel;
+    syncBtn.disabled = false;
+  }
 }
 
 function fbToggleHidden() {
@@ -1498,6 +1591,8 @@ function initSSE() {
     });
     renderList(list); // already server-sorted
     updateCwdSelect(list);
+    const cwdSel = document.getElementById("cwd-select");
+    if (cwdSel.value && cwdSel.value !== "__new__") checkGitStatus(cwdSel.value);
     const hashId = location.hash.slice(1);
     if (hashId && sessions[hashId] && !selectedId) {
       // First load: restore from hash using snapshot data (no extra fetch)

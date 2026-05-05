@@ -1,8 +1,12 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, stat, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { normalize, resolve, dirname } from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
+
+const execFileAsync = promisify(execFile);
 import logger from "./logger.ts";
 import {
   AnswerQuestionSchema,
@@ -396,6 +400,97 @@ Bun.serve({
       } catch (err: any) {
         return Response.json({ path: target, parent, dirs: [], error: err.message });
       }
+    },
+
+    // ── Git sync ─────────────────────────────────────────────────────────
+
+    "/git-status": async (req) => {
+      const url = new URL(req.url);
+      const path = url.searchParams.get("path");
+      if (!path) return jsonError(400, "Missing path parameter");
+
+      try {
+        await execFileAsync("git", ["-C", path, "rev-parse", "--is-inside-work-tree"]);
+      } catch {
+        return Response.json({ isGitRepo: false });
+      }
+
+      let branch: string | null = null;
+      try {
+        const { stdout } = await execFileAsync("git", ["-C", path, "rev-parse", "--abbrev-ref", "HEAD"]);
+        branch = stdout.trim();
+      } catch { /* ignore */ }
+
+      try {
+        await execFileAsync("git", ["-C", path, "fetch", "--quiet"], { timeout: 10_000 });
+      } catch { /* best-effort */ }
+
+      let behind = 0, ahead = 0;
+      try {
+        const { stdout } = await execFileAsync("git", [
+          "-C", path, "rev-list", "--count", "--left-right", "@{upstream}...HEAD",
+        ]);
+        const parts = stdout.trim().split(/\s+/);
+        behind = parseInt(parts[0], 10) || 0;
+        ahead = parseInt(parts[1], 10) || 0;
+      } catch { /* no upstream */ }
+
+      return Response.json({ isGitRepo: true, branch, behind, ahead });
+    },
+
+    "/git-sync": {
+      POST: async (req) => {
+        const parsed = await parseBody(req, z.object({ path: z.string().min(1) }));
+        if (parsed instanceof Response) return parsed;
+        const { path } = parsed.data;
+
+        try {
+          await execFileAsync("git", ["-C", path, "rev-parse", "--is-inside-work-tree"]);
+        } catch {
+          return jsonError(400, "Not a git repository");
+        }
+
+        try {
+          await execFileAsync("git", ["-C", path, "fetch"], { timeout: 15_000 });
+        } catch (err: any) {
+          return Response.json({ ok: false, error: `Fetch failed: ${err.stderr || err.message}` });
+        }
+
+        try {
+          await execFileAsync("git", ["-C", path, "pull", "--ff-only"], { timeout: 30_000 });
+        } catch (err: any) {
+          try { await execFileAsync("git", ["-C", path, "merge", "--abort"]); } catch { /* ignore */ }
+          return Response.json({
+            ok: false,
+            error: `Pull failed (branches may have diverged): ${err.stderr || err.message}`,
+          });
+        }
+
+        try {
+          const { stdout } = await execFileAsync("git", [
+            "-C", path, "rev-list", "--count", "--left-right", "@{upstream}...HEAD",
+          ]);
+          const parts = stdout.trim().split(/\s+/);
+          const localAhead = parseInt(parts[1], 10) || 0;
+          if (localAhead > 0) {
+            await execFileAsync("git", ["-C", path, "push"], { timeout: 30_000 });
+          }
+        } catch (err: any) {
+          return Response.json({ ok: false, error: `Push failed: ${err.stderr || err.message}` });
+        }
+
+        let behind = 0, ahead = 0;
+        try {
+          const { stdout } = await execFileAsync("git", [
+            "-C", path, "rev-list", "--count", "--left-right", "@{upstream}...HEAD",
+          ]);
+          const parts = stdout.trim().split(/\s+/);
+          behind = parseInt(parts[0], 10) || 0;
+          ahead = parseInt(parts[1], 10) || 0;
+        } catch { /* ignore */ }
+
+        return Response.json({ ok: true, behind, ahead });
+      },
     },
 
     "/mkdir": {
