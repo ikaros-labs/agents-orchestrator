@@ -539,7 +539,8 @@ Bun.serve({
         const approvedInput = pendingTool?.input ?? {};
         log.info({ id, tool: pendingTool?.name, toolUseID }, "tool approved");
         store.removePendingTool(id, toolUseID);
-        if (session.pendingTools.length === 0) store.setStatus(id, "running");
+        const approveResumeStatus = session.mode !== "edit" ? "planning" : "running";
+        if (session.pendingTools.length === 0) store.setStatus(id, approveResumeStatus);
         sessions.resolveToolApproval(id, toolUseID, {
           behavior: "allow",
           updatedInput: approvedInput,
@@ -549,7 +550,7 @@ Bun.serve({
             id,
             status:
               session.pendingTools.length === 0
-                ? "running"
+                ? approveResumeStatus
                 : "awaiting_tool_approval",
           },
           { status: 202 },
@@ -573,7 +574,8 @@ Bun.serve({
         );
         log.info({ id, tool: pendingTool?.name, toolUseID }, "tool rejected");
         store.removePendingTool(id, toolUseID);
-        if (session.pendingTools.length === 0) store.setStatus(id, "running");
+        const rejectResumeStatus = session.mode !== "edit" ? "planning" : "running";
+        if (session.pendingTools.length === 0) store.setStatus(id, rejectResumeStatus);
         sessions.resolveToolApproval(id, toolUseID, {
           behavior: "deny",
           message: reason?.trim() || "User denied this tool call",
@@ -582,7 +584,7 @@ Bun.serve({
           id,
           status:
             session.pendingTools.length === 0
-              ? "running"
+              ? rejectResumeStatus
               : "awaiting_tool_approval",
         });
       }),
@@ -617,7 +619,7 @@ Bun.serve({
         if (answerText)
           store.appendChat(id, { type: "user", text: answerText, ts });
         store.removePendingTool(id, askToolEntry.toolUseID);
-        store.setStatus(id, session.mode === "plan" ? "planning" : "running");
+        store.setStatus(id, session.mode !== "edit" ? "planning" : "running");
         sessions.resolveToolApproval(id, askToolEntry.toolUseID, {
           behavior: "allow",
           updatedInput: { questions, answers },

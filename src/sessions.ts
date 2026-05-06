@@ -299,6 +299,20 @@ function makeCanUseTool(id: string, sandbox: SandboxMode): CanUseTool {
       };
     }
 
+    // Deny file-write tools during the planning phase regardless of sandbox settings.
+    // mode "edit" is only set by executeApprovedSession after the user explicitly approves.
+    const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+    if (WRITE_TOOLS.has(toolName)) {
+      const session = store.getSession(id);
+      if (session && session.mode !== "edit") {
+        return {
+          behavior: "deny",
+          message:
+            "File edits are not allowed during the planning phase. Approve the plan to proceed with implementation.",
+        };
+      }
+    }
+
     // Auto-approve attach_files — it only copies files for display, no confirmation needed.
     if (toolName === "mcp__orchestrator__attach_files") {
       return { behavior: "allow", updatedInput: input };
