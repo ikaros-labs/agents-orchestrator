@@ -1,5 +1,4 @@
 import { spawn as nodeSpawn } from "node:child_process";
-import { homedir } from "node:os";
 import type {
   SpawnedProcess,
   SpawnOptions,
@@ -44,65 +43,6 @@ export function makeStderrCapturingSpawner(
       signal: opts.signal,
     });
     attachStderrCapture(jobId, proc);
-    return proc as unknown as SpawnedProcess;
-  };
-}
-
-// ── Docker spawner ────────────────────────────────────────────────────────────
-
-const DOCKER_IMAGE =
-  process.env.AGENT_DOCKER_IMAGE ?? "agents-orchestrator-worker:latest";
-
-export function makeDockerSpawner(
-  jobId: string,
-  cwd: string | null,
-): (opts: SpawnOptions) => SpawnedProcess {
-  return (opts: SpawnOptions): SpawnedProcess => {
-    const dockerArgs = [
-      "run",
-      "--rm",
-      "-i",
-      "--name",
-      `agent-${jobId}`,
-      // Security hardening
-      "--cap-drop",
-      "ALL",
-      "--security-opt",
-      "no-new-privileges",
-      // Resource limits
-      "--memory",
-      "4g",
-      "--cpus",
-      "2",
-      "--pids-limit",
-      "200",
-      // Mount worktree
-      ...(cwd ? ["-v", `${cwd}:${cwd}`] : []),
-      // Mount session storage for resume support
-      "-v",
-      `${homedir()}/.claude:/root/.claude`,
-      // Pass environment
-      ...Object.entries(opts.env)
-        .filter(([, v]) => v !== undefined)
-        .flatMap(([k, v]) => ["-e", `${k}=${v}`]),
-      // Working directory
-      ...(opts.cwd ? ["-w", opts.cwd] : []),
-      // Image and command
-      DOCKER_IMAGE,
-      opts.command,
-      ...opts.args,
-    ];
-
-    const proc = nodeSpawn("docker", dockerArgs, {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    attachStderrCapture(jobId, proc, "stderr:docker");
-
-    // Wire abort signal to container stop
-    opts.signal.addEventListener("abort", () => {
-      nodeSpawn("docker", ["stop", `agent-${jobId}`], { stdio: "ignore" });
-    });
-
     return proc as unknown as SpawnedProcess;
   };
 }
