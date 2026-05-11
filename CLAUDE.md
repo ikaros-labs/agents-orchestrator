@@ -11,7 +11,7 @@ bun run start # production
 
 Runtime and package manager: **bun**
 
-The server is running at **http://100.81.181.2:6432/**
+The server runs on port **6432** by default.
 
 ### Production server (across worktrees)
 
