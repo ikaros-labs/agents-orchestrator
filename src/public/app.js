@@ -602,7 +602,7 @@ function renderList(list) {
         ${j.mode && j.mode !== "auto" ? `<span class="mode-tag mode-tag-${j.mode}">${j.mode}</span>` : ""}
         ${j.model && j.model !== "claude-sonnet-4-6" ? `<span class="mode-tag mode-tag-${j.model === "claude-haiku-4-5-20251001" ? "haiku" : "opus"}">${j.model === "claude-haiku-4-5-20251001" ? "haiku" : "opus"}</span>` : ""}
         ${j.effort && j.effort !== "high" ? `<span class="mode-tag mode-tag-${j.effort}">${j.effort}</span>` : ""}
-        ${j.sandbox && j.sandbox !== "none" ? `<span class="mode-tag mode-tag-${j.sandbox}">${j.sandbox === "docker" ? "🐳" : j.sandbox === "yolo" ? "⚡" : "🛡️"}</span>` : ""}
+        ${j.sandbox && j.sandbox !== "none" ? `<span class="mode-tag mode-tag-${j.sandbox}">${j.sandbox === "yolo" ? "⚡" : "🛡️"}</span>` : ""}
         <span class="session-time">${relTime(j.createdAt)}</span>
       </div>
       <div class="session-prompt">${escHtml(j.title || j.prompt)}</div>

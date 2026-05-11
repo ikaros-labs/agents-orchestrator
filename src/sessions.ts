@@ -12,11 +12,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import logger from "./logger.ts";
-import {
-  jobStderr,
-  makeDockerSpawner,
-  makeStderrCapturingSpawner,
-} from "./spawners.ts";
+import { jobStderr, makeStderrCapturingSpawner } from "./spawners.ts";
 import * as store from "./store.ts";
 import type {
   SandboxMode,
@@ -198,13 +194,6 @@ function buildQueryOptions(
         enabled: true,
         autoAllowBashIfSandboxed: true,
       },
-    };
-  }
-
-  if (sandbox === "docker") {
-    return {
-      ...autoApprove,
-      spawnClaudeCodeProcess: makeDockerSpawner(id, cwd),
     };
   }
 

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ALLOWED_MEDIA_TYPES } from "./sessions.ts";
 import type { SandboxMode } from "./types.ts";
 
-const SANDBOX_MODES = ["none", "sandbox", "docker", "yolo"] as const;
+const SANDBOX_MODES = ["none", "sandbox", "yolo"] as const;
 
 export const DEFAULTS = {
   model: "claude-sonnet-4-6",
@@ -34,7 +34,7 @@ export const CreateSessionSchema = z.object({
     .optional()
     .default(DEFAULTS.effort),
   sandbox: z
-    .enum(["none", "sandbox", "docker", "yolo"])
+    .enum(["none", "sandbox", "yolo"])
     .optional()
     .default(DEFAULTS.sandbox),
 });
