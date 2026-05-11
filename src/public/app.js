@@ -35,7 +35,7 @@ function showNewTask() {
 
 const sessions = {};
 let renderDetailFresh = false; // when true, next renderDetail call always scrolls to bottom
-let currentMode = "auto";
+let currentMode = "plan";
 let currentModel = "claude-sonnet-4-6";
 let currentEffort = "high";
 let currentSandbox = "sandbox";
@@ -1928,7 +1928,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Tab" && e.shiftKey) {
     e.preventDefault();
-    const modes = ["auto", "plan", "edit"];
+    const modes = ["plan", "edit"];
     const next = modes[(modes.indexOf(currentMode) + 1) % modes.length];
     setMode(next);
   }
