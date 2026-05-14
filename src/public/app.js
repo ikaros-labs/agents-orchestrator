@@ -607,7 +607,7 @@ function renderList(list) {
       </div>
       <div class="session-prompt">${escHtml(j.title || j.prompt)}</div>
       ${j.images && j.images.length ? `<div class="session-image-badge">📎 ${j.images.length} file${j.images.length > 1 ? "s" : ""}</div>` : ""}
-      ${j.cwd ? `<div style="font-size:10px;color:#555;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.cwd)}</div>` : ""}
+      ${j.cwd ? `<div style="font-size:10px;color:#555;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(displayPath(j.cwd))}</div>` : ""}
     </div>
   `,
     )
@@ -1131,7 +1131,7 @@ function renderDetailHeader(job) {
       ${badge(job.status)}
       <span>Started: ${started}</span>
       <span>Finished: ${finished}</span>
-      ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ""}
+      ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(displayPath(job.cwd))}</span>` : ""}
       ${job.worktreePath ? `<span style="font-family:monospace;color:#6b9eff" title="Isolated worktree created for this job">worktree: ${escHtml(job.worktreePath)}</span>` : ""}
       ${job.sandbox && job.sandbox !== "none" ? `<span class="mode-tag mode-tag-${job.sandbox}" title="Sandbox: ${job.sandbox}">${job.sandbox}</span>` : ""}
       ${job.usage ? renderUsageBadge(job.usage) : ""}
