@@ -1586,6 +1586,7 @@ function initSSE() {
     archivedCount = data.archivedCount;
     if (data.slashCommands) slashCommands = data.slashCommands;
     if (data.home) fbHome = data.home;
+    if (data.defaults?.sandbox) setSandbox(data.defaults.sandbox);
     list.forEach((j) => {
       sessions[j.id] = j;
     });
