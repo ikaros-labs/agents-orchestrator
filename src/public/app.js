@@ -250,11 +250,14 @@ function onCwdSelectChange() {
     openFolderBrowser();
     return;
   }
+  const worktreeLabel = document.querySelector(".worktree-label");
   if (!sel.value) {
     document.getElementById("git-sync-btn").style.display = "none";
     document.getElementById("git-sync-error").textContent = "";
+    worktreeLabel.style.display = "none";
     return;
   }
+  worktreeLabel.style.display = "";
   checkGitStatus(sel.value);
 }
 
@@ -284,6 +287,7 @@ function updateCwdSelect(list) {
   } else if ((!current || current === "__new__") && dirs.length) {
     sel.value = dirs[0];
   }
+  onCwdSelectChange();
 }
 
 // ── Folder browser ──────────────────────────────────────────────────────────

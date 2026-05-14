@@ -225,6 +225,13 @@ export function setStatus(id: string, status: SessionStatus): void {
   emitSessionStatus(session);
 }
 
+export function setSessionCwd(id: string, cwd: string): void {
+  const session = getSessionOrWarn(id, "setSessionCwd");
+  if (!session) return;
+  session.cwd = cwd;
+  persistSession(session);
+}
+
 export function appendChat(id: string, entry: ChatEntry): void {
   const session = getSessionOrWarn(id, "appendChat");
   if (!session) return;
