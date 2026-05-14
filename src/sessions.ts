@@ -604,6 +604,12 @@ export async function executeSession(
     session.id,
     session.mode === "auto" || session.mode === "plan" ? "planning" : "running",
   );
+  if (!session.cwd) {
+    const tmpDir = `/tmp/agent-${session.id}`;
+    await mkdir(tmpDir, { recursive: true });
+    store.setSessionCwd(session.id, tmpDir);
+    session.cwd = tmpDir;
+  }
   await resolveEffectiveCwd(session.id, session.cwd, session.useWorktree);
   const promptArg =
     userInput.rawImages.length > 0
