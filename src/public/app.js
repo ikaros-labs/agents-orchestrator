@@ -1644,6 +1644,7 @@ function initSSE() {
       archived,
       usage,
       title,
+      worktreePath,
     } = data;
     const session = sessions[jobId];
     if (!session) return;
@@ -1660,6 +1661,7 @@ function initSSE() {
       archived,
       usage,
       title,
+      worktreePath,
     });
     if (prevArchived !== archived) {
       archivedCount += archived ? 1 : -1;

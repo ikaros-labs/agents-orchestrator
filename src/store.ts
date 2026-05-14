@@ -67,6 +67,7 @@ function emitSessionStatus(session: Session): void {
     archived: session.archived,
     usage: session.usage,
     title: session.title,
+    worktreePath: session.worktreePath,
   });
 }
 
@@ -292,6 +293,7 @@ export function setWorktreePath(id: string, worktreePath: string): void {
   if (!session) return;
   session.worktreePath = worktreePath;
   persistSession(session);
+  emitSessionStatus(session);
 }
 
 export function setResult(id: string, result: string): void {
