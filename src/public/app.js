@@ -1132,7 +1132,7 @@ function renderDetailHeader(job) {
       <span>Started: ${started}</span>
       <span>Finished: ${finished}</span>
       ${job.cwd ? `<span style="font-family:monospace">cwd: ${escHtml(job.cwd)}</span>` : ""}
-      ${job.worktreePath ? `<span id="wt-${job.id}" style="font-family:monospace;color:#6b9eff;cursor:pointer" title="Click to copy worktree path" onclick="(function(el,p){navigator.clipboard.writeText(p).then(function(){var o=el.innerHTML;el.innerHTML='copied!';setTimeout(function(){el.innerHTML=o;},1500);})})(document.getElementById('wt-${job.id}'),${JSON.stringify(job.worktreePath)})">worktree: ${escHtml(job.worktreePath)}</span>` : ""}
+      ${job.worktreePath ? `<span id="wt-${job.id}" style="font-family:monospace;color:#6b9eff;cursor:pointer" title="Click to copy worktree path" onclick="(function(el,p){navigator.clipboard.writeText(p).then(function(){var o=el.innerHTML;el.innerHTML='copied!';setTimeout(function(){el.innerHTML=o;},1500);})})(document.getElementById('wt-${job.id}'),${escHtml(JSON.stringify(job.worktreePath))})">worktree: ${escHtml(job.worktreePath)}</span>` : ""}
       ${job.sandbox && job.sandbox !== "none" ? `<span class="mode-tag mode-tag-${job.sandbox}" title="Sandbox: ${job.sandbox}">${job.sandbox}</span>` : ""}
       ${job.usage ? renderUsageBadge(job.usage) : ""}
       <div class="detail-actions">${stopBtnHtml}${archiveBtnHtml}</div>
