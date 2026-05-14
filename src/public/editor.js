@@ -37,6 +37,15 @@ const LANG_MAP = {
 };
 
 let currentView = null;
+let currentTheme = document.documentElement.getAttribute("data-theme") ?? "dark";
+
+window.addEventListener("themechange", (e) => {
+  currentTheme = e.detail.theme;
+  if (window._viewerState) {
+    const { containerId, content, filename } = window._viewerState;
+    window.initCodeViewer(containerId, content, filename);
+  }
+});
 
 window.initCodeViewer = function (containerId, content, filename) {
   const container = document.getElementById(containerId);
@@ -46,11 +55,13 @@ window.initCodeViewer = function (containerId, content, filename) {
     currentView = null;
   }
 
+  window._viewerState = { containerId, content, filename };
+
   const ext = (filename.split(".").pop() ?? "").toLowerCase();
   const langFn = LANG_MAP[ext];
 
   const extensions = [
-    oneDark,
+    ...(currentTheme === "dark" ? [oneDark] : []),
     lineNumbers(),
     highlightActiveLine(),
     EditorView.theme({
