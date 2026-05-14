@@ -12,6 +12,7 @@ import {
   AnswerQuestionSchema,
   ApproveSessionSchema,
   CreateSessionSchema,
+  DEFAULTS,
   FollowUpSchema,
   ReviseSchema,
   ToolActionSchema,
@@ -331,6 +332,7 @@ Bun.serve({
             archivedCount: store.countArchivedSessions(),
             slashCommands: getSlashCommands(),
             home: homedir(),
+            defaults: DEFAULTS,
           };
           controller.enqueue(
             sseEncoder.encode(
